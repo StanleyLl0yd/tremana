@@ -99,6 +99,51 @@ struct TreManaModelTests {
         #expect(!model.isBusy)
     }
 
+    @Test @MainActor func actionsAreLimitedToExistingSelectedTorrents() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1), fixtureTorrent(2)]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+
+        model.selectedTorrentIDs = [2, 999]
+        await model.perform(.stop)
+
+        let calls = await remote.performedActions()
+        #expect(calls.count == 1)
+        #expect(calls.first?.method == "torrent-stop")
+        #expect(calls.first?.ids == [2])
+        #expect(model.selectedTorrentIDs == [2])
+
+        model.selectedTorrentIDs = []
+        await model.perform(.start)
+        #expect(await remote.performedActions().count == 1)
+
+        model.disconnect()
+        #expect(model.selectedTorrentIDs.isEmpty)
+    }
+
+    @Test @MainActor func pendingActionCannotRestoreStateAfterDisconnect() async {
+        let remote = ControlledRPC(hold: .action, torrents: [fixtureTorrent(1)])
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+
+        let task = Task { await model.perform(.verify) }
+        await remote.waitForHeldCall()
+        model.disconnect()
+        await remote.resumeHeldCall()
+        await task.value
+
+        #expect(!model.isConnected)
+        #expect(!model.isBusy)
+        #expect(model.errorMessage == nil)
+        #expect(model.torrents.isEmpty)
+        #expect(model.selectedTorrentIDs.isEmpty)
+    }
+
     @Test @MainActor func staleNetworkErrorDoesNotAppearAfterDisconnect() async {
         let remote = ControlledRPC(hold: .session, torrents: [])
         let model = TreManaModel(makeClient: { _ in remote })
@@ -128,11 +173,14 @@ private actor ControlledRPC: TransmissionRPCProviding {
         case session
         case initialTorrents
         case refresh
+        case action
     }
 
     let hold: Hold
     let contents: [TransmissionTorrent]
     private var torrentCalls = 0
+    private var recordedActions: [(method: String, ids: [Int])] = []
+    private var actionContinuation: CheckedContinuation<Void, Error>?
     private var sessionContinuation: CheckedContinuation<TransmissionSession, Error>?
     private var torrentContinuation: CheckedContinuation<[TransmissionTorrent], Error>?
     private var startedContinuation: CheckedContinuation<Void, Never>?
@@ -140,6 +188,21 @@ private actor ControlledRPC: TransmissionRPCProviding {
     init(hold: Hold, torrents: [TransmissionTorrent]) {
         self.hold = hold
         self.contents = torrents
+    }
+
+    func perform(_ action: TorrentAction, ids: [Int]) async throws {
+        recordedActions.append((method: action.rawValue, ids: ids))
+        if hold == .action {
+            try await withCheckedThrowingContinuation { continuation in
+                actionContinuation = continuation
+                startedContinuation?.resume()
+                startedContinuation = nil
+            }
+        }
+    }
+
+    func performedActions() -> [(method: String, ids: [Int])] {
+        recordedActions
     }
 
     func sessionInfo() async throws -> TransmissionSession {
@@ -169,7 +232,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
     }
 
     func waitForHeldCall() async {
-        guard sessionContinuation == nil, torrentContinuation == nil else {
+        guard sessionContinuation == nil, torrentContinuation == nil,
+              actionContinuation == nil else {
             return
         }
         await withCheckedContinuation { continuation in
@@ -184,6 +248,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         sessionContinuation = nil
         torrentContinuation?.resume(returning: contents)
         torrentContinuation = nil
+        actionContinuation?.resume()
+        actionContinuation = nil
     }
 
     func failHeldCall() {
@@ -191,5 +257,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         sessionContinuation = nil
         torrentContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
         torrentContinuation = nil
+        actionContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
+        actionContinuation = nil
     }
 }

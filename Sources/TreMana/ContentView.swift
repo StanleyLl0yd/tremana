@@ -10,6 +10,7 @@ private enum TorrentFilter: Hashable {
 struct ContentView: View {
     @Environment(TreManaModel.self) private var model
     @State private var filter: TorrentFilter? = .all
+    @State private var showingVerifyConfirmation = false
 
     var body: some View {
         NavigationSplitView {
@@ -32,7 +33,28 @@ struct ContentView: View {
         }
         .toolbar {
             if model.isConnected {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        Task { await model.perform(.start) }
+                    } label: {
+                        Label("Start", systemImage: "play.fill")
+                    }
+                    .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
+
+                    Button {
+                        Task { await model.perform(.stop) }
+                    } label: {
+                        Label("Stop", systemImage: "pause.fill")
+                    }
+                    .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
+
+                    Button {
+                        showingVerifyConfirmation = true
+                    } label: {
+                        Label("Verify", systemImage: "checkmark.shield")
+                    }
+                    .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
+
                     Button {
                         Task { await model.refresh() }
                     } label: {
@@ -44,6 +66,20 @@ struct ContentView: View {
                     Button("Disconnect") { model.disconnect() }
                 }
             }
+        }
+        .onChange(of: filter) { _, _ in
+            model.selectedTorrentIDs.removeAll()
+        }
+        .confirmationDialog(
+            "Verify \(model.selectedTorrentIDs.count) selected torrent(s)?",
+            isPresented: $showingVerifyConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Verify") {
+                Task { await model.perform(.verify) }
+            }
+        } message: {
+            Text("Verification can temporarily interrupt active transfers.")
         }
     }
 }
@@ -95,6 +131,8 @@ private struct TorrentTableView: View {
     }
 
     var body: some View {
+        @Bindable var observedModel = model
+
         VStack(spacing: 0) {
             if let server = model.server {
                 HStack {
@@ -106,7 +144,7 @@ private struct TorrentTableView: View {
                 .foregroundStyle(.secondary)
                 .padding(12)
             }
-            Table(filteredTorrents) {
+            Table(filteredTorrents, selection: $observedModel.selectedTorrentIDs) {
                 TableColumn("Name", value: \.name)
                 TableColumn("Progress") { torrent in
                     Text(torrent.percentDone, format: .percent.precision(.fractionLength(1)))

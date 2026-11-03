@@ -9,6 +9,7 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
     case serverError(String)
     case missingArguments
     case unsupportedRPCVersion(Int)
+    case invalidTorrentSelection
 
     public var errorDescription: String? {
         switch self {
@@ -28,6 +29,8 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
             "Transmission returned an incomplete RPC response."
         case .unsupportedRPCVersion(let version):
             "RPC version \(version) is not yet supported. TreMana currently supports RPC 16 and 17."
+        case .invalidTorrentSelection:
+            "Select one or more valid torrents. Refusing an operation that could affect all torrents."
         }
     }
 }
@@ -111,10 +114,33 @@ public actor TransmissionRPCClient {
         return response.torrents
     }
 
+    public func perform(_ action: TorrentAction, ids: [Int]) async throws {
+        // Legacy Transmission interprets missing or empty ids as ALL torrents.
+        guard !ids.isEmpty, ids.allSatisfy({ $0 > 0 }) else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        let ids = Array(Set(ids)).sorted()
+        let _: RPCReply<EmptyRPCArguments> = try await send(
+            action.rawValue,
+            arguments: ["ids": .array(ids.map { .integer($0) })]
+        )
+    }
+
     private func call<Value: Decodable>(
         _ method: String,
         arguments: [String: RPCValue] = [:]
     ) async throws -> Value {
+        let reply: RPCReply<Value> = try await send(method, arguments: arguments)
+        guard let arguments = reply.arguments else {
+            throw TransmissionRPCError.missingArguments
+        }
+        return arguments
+    }
+
+    private func send<Value: Decodable>(
+        _ method: String,
+        arguments: [String: RPCValue]
+    ) async throws -> RPCReply<Value> {
         let body = try JSONEncoder().encode(
             RPCRequest(method: method, arguments: arguments)
         )
@@ -163,10 +189,7 @@ public actor TransmissionRPCClient {
             guard decoded.result == "success" else {
                 throw TransmissionRPCError.serverError(decoded.result)
             }
-            guard let arguments = decoded.arguments else {
-                throw TransmissionRPCError.missingArguments
-            }
-            return arguments
+            return decoded
         }
 
         throw TransmissionRPCError.sessionHandshakeFailed
