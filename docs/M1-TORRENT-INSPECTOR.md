@@ -5,7 +5,7 @@ Selecting **one** torrent opens its lower inspector. The native macOS
 details pane. Selecting no rows or multiple rows displays an explicit
 empty state; no broad request is sent to the server.
 
-The inspector supports six read-only tabs:
+The inspector supports five read-only tabs:
 - **Details:** downloaded/uploaded bytes, speeds, ETA, ratio, peer counts,
   total and selected sizes, remote save directory, hash, creator, dates,
   comment and Transmission error.
