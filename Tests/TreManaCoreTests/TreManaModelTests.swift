@@ -428,6 +428,61 @@ struct TreManaModelTests {
         #expect(model.errorMessage == TransmissionRPCError.fileSelectionChanged.localizedDescription)
     }
 
+    @Test @MainActor func fileToggleResponseCannotLeakAcrossSelectionSwitch() async {
+        let remote = ControlledRPC(
+            hold: .fileAction, torrents: [fixtureTorrent(1), fixtureTorrent(2)],
+            wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        let pending = Task {
+            await model.setFileWanted(
+                torrentID: 1, fileIndex: 1, wanted: false, expectedWanted: true
+            )
+        }
+        await remote.waitForHeldCall()
+        model.selectedTorrentIDs = [2]
+        await model.loadSelectedTorrentDetails()
+        #expect(model.selectedTorrentDetail?.id == 2)
+
+        await remote.resumeHeldCall()
+        await pending.value
+        #expect(model.selectedTorrentDetail?.id == 2)
+        #expect(model.errorMessage == nil)
+        #expect(!model.isBusy)
+    }
+
+    @Test @MainActor func disconnectedFileToggleCannotRestoreOldState() async {
+        let remote = ControlledRPC(
+            hold: .fileAction, torrents: [fixtureTorrent(1)],
+            wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        let pending = Task {
+            await model.setFileWanted(
+                torrentID: 1, fileIndex: 1, wanted: false, expectedWanted: true
+            )
+        }
+        await remote.waitForHeldCall()
+        model.disconnect()
+        await remote.resumeHeldCall()
+        await pending.value
+        #expect(!model.isConnected)
+        #expect(model.selectedTorrentDetail == nil)
+        #expect(model.errorMessage == nil)
+        #expect(model.noticeMessage == nil)
+        #expect(!model.isBusy)
+    }
+
     @Test @MainActor func failedFileRPCDoesNotOptimisticallyChangeCheckbox() async {
         let remote = ControlledRPC(
             hold: .none, torrents: [fixtureTorrent(1)],
@@ -478,6 +533,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         case initialTorrents
         case refresh
         case action
+        case fileAction
         case detail
     }
 
@@ -489,6 +545,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private var torrentCalls = 0
     private var recordedActions: [(method: String, ids: [Int])] = []
     private var actionContinuation: CheckedContinuation<Void, Error>?
+    private var fileActionContinuation: CheckedContinuation<Void, Error>?
     private var detailContinuation: CheckedContinuation<TransmissionTorrentDetail?, Never>?
     private var sessionContinuation: CheckedContinuation<TransmissionSession, Error>?
     private var torrentContinuation: CheckedContinuation<[TransmissionTorrent], Error>?
@@ -508,6 +565,13 @@ private actor ControlledRPC: TransmissionRPCProviding {
 
     func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws {
         changedFiles.append((torrentID, fileIndex, wanted))
+        if hold == .fileAction {
+            try await withCheckedThrowingContinuation { continuation in
+                fileActionContinuation = continuation
+                startedContinuation?.resume()
+                startedContinuation = nil
+            }
+        }
         if rejectFileChanges {
             throw TransmissionRPCError.serverError("read only")
         }
@@ -614,7 +678,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
 
     func waitForHeldCall() async {
         guard sessionContinuation == nil, torrentContinuation == nil,
-              actionContinuation == nil, detailContinuation == nil else {
+              actionContinuation == nil, fileActionContinuation == nil,
+              detailContinuation == nil else {
             return
         }
         await withCheckedContinuation { continuation in
@@ -631,6 +696,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         torrentContinuation = nil
         actionContinuation?.resume()
         actionContinuation = nil
+        fileActionContinuation?.resume()
+        fileActionContinuation = nil
         detailContinuation?.resume(returning: try? detailFixture(1))
         detailContinuation = nil
     }
@@ -642,6 +709,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         torrentContinuation = nil
         actionContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
         actionContinuation = nil
+        fileActionContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
+        fileActionContinuation = nil
         detailContinuation?.resume(returning: nil)
         detailContinuation = nil
     }
