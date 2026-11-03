@@ -28,7 +28,7 @@ struct ConnectionProfileTests {
 
         try await store.remove(id: profile.id)
         #expect(try await store.list().isEmpty)
-        #expect(await passwords.read(for: profile.id) == nil)
+        #expect(try await passwords.read(for: profile.id) == nil)
     }
 
     @Test func cannotReuseSavedPasswordForDifferentServer() async throws {
