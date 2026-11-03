@@ -426,6 +426,15 @@ struct TreManaModelTests {
         #expect(await remote.fileSelectionCalls().isEmpty)
         #expect(model.selectedTorrentDetail?.fileStats?[0].wanted == false)
         #expect(model.errorMessage == TransmissionRPCError.fileSelectionChanged.localizedDescription)
+
+        await remote.replaceWantedStates([true, true])
+        await model.loadSelectedTorrentDetails()
+        await remote.renameTestFiles()
+        await model.setFileWanted(
+            torrentID: 1, fileIndex: 1, wanted: false, expectedWanted: true
+        )
+        #expect(await remote.fileSelectionCalls().isEmpty)
+        #expect(model.errorMessage == TransmissionRPCError.invalidFileSelection.localizedDescription)
     }
 
     @Test @MainActor func fileToggleResponseCannotLeakAcrossSelectionSwitch() async {
@@ -540,6 +549,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
     let hold: Hold
     let contents: [TransmissionTorrent]
     private var wantedStates: [Bool]?
+    private var fileNamePrefix = "file_"
     private let rejectFileChanges: Bool
     private var changedFiles: [(torrentID: Int, fileIndex: Int, wanted: Bool)] = []
     private var torrentCalls = 0
@@ -590,6 +600,10 @@ private actor ControlledRPC: TransmissionRPCProviding {
         wantedStates = updated
     }
 
+    func renameTestFiles() {
+        fileNamePrefix = "different_"
+    }
+
     func addTorrent(
         _ source: TorrentAddSource,
         startImmediately: Bool
@@ -614,7 +628,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private func detailFixture(_ id: Int) throws -> TransmissionTorrentDetail {
         if let wantedStates {
             let files: [[String: Any]] = wantedStates.indices.map { index in
-                ["name": "file_\(index)", "length": 1, "bytesCompleted": 0]
+                ["name": "\(fileNamePrefix)\(index)", "length": 1, "bytesCompleted": 0]
             }
             let stats: [[String: Any]] = wantedStates.map { wanted in
                 ["wanted": wanted, "priority": 0, "bytesCompleted": 0]
