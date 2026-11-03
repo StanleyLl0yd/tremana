@@ -10,7 +10,7 @@ struct TreManaModelTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let profiles = UserDefaultsProfileStore(
-            defaults: defaults, passwords: MemoryPasswords()
+            suiteName: suiteName, passwords: MemoryPasswords()
         )
         let profile = fixtureProfile()
         try await profiles.save(profile, password: .replace("secret-password"))

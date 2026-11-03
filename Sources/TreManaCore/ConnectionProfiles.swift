@@ -73,10 +73,17 @@ public actor UserDefaultsProfileStore: ConnectionProfileStoring {
     private let passwords: any RPCPasswordStoring
 
     public init(
-        defaults: UserDefaults = .standard,
+        suiteName: String? = nil,
         passwords: any RPCPasswordStoring = KeychainRPCPasswordStore()
     ) {
-        self.defaults = defaults
+        if let suiteName {
+            guard let isolated = UserDefaults(suiteName: suiteName) else {
+                preconditionFailure("Invalid UserDefaults suite name.")
+            }
+            self.defaults = isolated
+        } else {
+            self.defaults = .standard
+        }
         self.passwords = passwords
     }
 

@@ -10,7 +10,7 @@ struct ConnectionProfileTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let passwords = MemoryPasswords()
-        let store = UserDefaultsProfileStore(defaults: defaults, passwords: passwords)
+        let store = UserDefaultsProfileStore(suiteName: suiteName, passwords: passwords)
         let profile = fixtureProfile()
         let secret = "Only-In-Keychain-Secret-934"
 
@@ -37,7 +37,7 @@ struct ConnectionProfileTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let passwords = MemoryPasswords()
-        let store = UserDefaultsProfileStore(defaults: defaults, passwords: passwords)
+        let store = UserDefaultsProfileStore(suiteName: suiteName, passwords: passwords)
         let original = fixtureProfile()
         try await store.save(original, password: .replace("secure-value"))
         let changed = ConnectionProfile(
@@ -62,7 +62,7 @@ struct ConnectionProfileTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let store = UserDefaultsProfileStore(
-            defaults: defaults, passwords: MemoryPasswords()
+            suiteName: suiteName, passwords: MemoryPasswords()
         )
         let profile = fixtureProfile()
         try await store.save(profile, password: .remove)
@@ -80,7 +80,7 @@ struct ConnectionProfileTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = UserDefaultsProfileStore(
-            defaults: defaults, passwords: MemoryPasswords()
+            suiteName: suiteName, passwords: MemoryPasswords()
         )
         let profile = ConnectionProfile(
             id: UUID(), name: "Unsafe",
@@ -101,7 +101,7 @@ struct ConnectionProfileTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(Data("invalid json".utf8), forKey: "com.sl.tremana.profiles.v1")
         let store = UserDefaultsProfileStore(
-            defaults: defaults, passwords: MemoryPasswords()
+            suiteName: suiteName, passwords: MemoryPasswords()
         )
         do {
             _ = try await store.list()
