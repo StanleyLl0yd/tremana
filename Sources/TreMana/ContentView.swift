@@ -11,9 +11,24 @@ private enum TorrentFilter: Hashable {
 struct ContentView: View {
     @Environment(TreManaModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
+    @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
+    @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @State private var filter: TorrentFilter? = .all
     @State private var showingVerifyConfirmation = false
     @State private var showingAddTorrent = false
+
+    private var refreshConfiguration: RefreshConfiguration {
+        RefreshConfiguration(
+            enabled: autoRefreshEnabled,
+            mode: RefreshMode(rawValue: refreshMode) ?? .adaptive,
+            fixedIntervalSeconds: fixedInterval
+        )
+    }
+
+    private var refreshLoopIdentity: String {
+        "\(model.isConnected)-\(scenePhase == .active)-\(autoRefreshEnabled)-\(refreshMode)-\(fixedInterval)"
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -77,23 +92,29 @@ struct ContentView: View {
                 }
             }
         }
-        .task(id: "\(model.isConnected)-\(scenePhase == .active)") {
-            // SwiftUI cancels this task when connection or scene activity changes.
-            // Sleep before refresh: connect and torrent mutations already fetch immediately.
+        .task(id: refreshLoopIdentity) {
+            // SwiftUI cancels the task when connection, phase or settings change.
+            // First sleep avoids redundant fetch after Connect or torrent mutations.
             while !Task.isCancelled && model.isConnected {
-                let delay = RefreshPolicy.intervalSeconds(
+                guard let delay = refreshConfiguration.intervalSeconds(
                     torrents: model.torrents,
                     isForeground: scenePhase == .active,
                     hadError: model.errorMessage != nil
-                )
+                ) else { break }
                 do {
                     try await Task.sleep(for: .seconds(delay))
                 } catch {
                     break
                 }
                 guard !Task.isCancelled && model.isConnected else { break }
-                // Model excludes concurrent RPC polls while a mutation or refresh is in flight.
                 await model.refresh()
+            }
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            if oldPhase != .active && newPhase == .active,
+               model.isConnected && autoRefreshEnabled {
+                // Return to an already connected window with fresh data.
+                Task { await model.refresh() }
             }
         }
         .sheet(isPresented: $showingAddTorrent) {
