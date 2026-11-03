@@ -5,15 +5,24 @@ import TreManaCore
 struct TreManaApp: App {
     @State private var model = TreManaModel()
     @AppStorage(AppearancePreference.key) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(LanguagePreference.storageKey) private var preferredLanguage = LanguagePreference.automatic
 
     private var preferredAppearance: ColorScheme? {
         (AppearanceMode(rawValue: appearance) ?? .system).scheme
+    }
+
+    private var interfaceLocale: Locale {
+        Locale(identifier: LanguagePreference.resolve(
+            preferredLanguage,
+            preferredLanguages: Locale.preferredLanguages
+        ))
     }
 
     var body: some Scene {
         Window("TreMana", id: "main") {
             ContentView()
                 .environment(model)
+                .environment(\.locale, interfaceLocale)
                 .preferredColorScheme(preferredAppearance)
                 .frame(minWidth: 840, minHeight: 560)
         }
@@ -21,6 +30,7 @@ struct TreManaApp: App {
 
         Settings {
             RefreshSettingsView()
+                .environment(\.locale, interfaceLocale)
                 .preferredColorScheme(preferredAppearance)
         }
         .commands {
