@@ -174,18 +174,79 @@ struct TorrentInspectorView: View {
 
     private func files(_ detail: TransmissionTorrentDetail) -> some View {
         let entries = detail.files ?? []
-        return Group {
+        let stats = detail.fileStats
+        let selectionAvailable = stats?.count == entries.count
+        let wantedCount = stats?.filter(\.wanted).count ?? 0
+
+        return VStack(spacing: 0) {
+            if !entries.isEmpty {
+                HStack(spacing: 8) {
+                    Text("Choose files to download")
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 0)
+                    if selectionAvailable {
+                        Text("\(wantedCount) / \(entries.count)")
+                            .monospacedDigit()
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                Text("File selection does not delete previously downloaded data.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 7)
+                Divider()
+            }
+
             if entries.isEmpty {
                 placeholder("No file metadata available", symbol: "doc")
             } else {
                 List {
                     ForEach(entries.indices, id: \.self) { index in
                         let file = entries[index]
-                        let wanted = detail.fileStats?.indices.contains(index) == true
-                            ? detail.fileStats?[index].wanted : nil
+                        let wanted = selectionAvailable ? stats?[index].wanted : nil
                         HStack(spacing: 12) {
-                            Image(systemName: wanted == false ? "minus.circle" : "doc")
-                                .foregroundStyle(.secondary)
+                            if let stats, selectionAvailable {
+                                Toggle(isOn: Binding(
+                                    get: {
+                                        guard let current = model.selectedTorrentDetail,
+                                              current.id == detail.id,
+                                              let currentStats = current.fileStats,
+                                              currentStats.indices.contains(index) else {
+                                            return stats[index].wanted
+                                        }
+                                        return currentStats[index].wanted
+                                    },
+                                    set: { newValue in
+                                        Task {
+                                            await model.setFileWanted(
+                                                torrentID: detail.id,
+                                                fileIndex: index,
+                                                wanted: newValue,
+                                                expectedWanted: stats[index].wanted
+                                            )
+                                        }
+                                    }
+                                )) {
+                                    Text(file.name)
+                                }
+                                .toggleStyle(.checkbox)
+                                .labelsHidden()
+                                .disabled(model.isBusy || (stats[index].wanted && wantedCount == 1))
+                                .help(LocalizedStringKey(
+                                    stats[index].wanted && wantedCount == 1
+                                        ? "At least one file must remain selected for download"
+                                        : "Include this file in the download"
+                                ))
+                                .accessibilityLabel(Text(file.name))
+                            } else {
+                                Image(systemName: "questionmark.circle")
+                                    .foregroundStyle(.secondary)
+                                    .help("File selection unavailable")
+                                    .accessibilityHidden(true)
+                            }
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(file.name)
                                     .lineLimit(1)
