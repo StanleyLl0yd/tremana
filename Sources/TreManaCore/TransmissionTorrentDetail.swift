@@ -35,11 +35,6 @@ public struct TransmissionTorrentDetail: Decodable, Identifiable, Sendable {
     public let trackerStats: [TransmissionTorrentTrackerStat]?
     public let peers: [TransmissionTorrentPeer]?
     public let webseeds: [String]?
-    public let downloadLimit: Int?
-    public let uploadLimit: Int?
-    public let downloadLimited: Bool?
-    public let uploadLimited: Bool?
-    public let honorsSessionLimits: Bool?
     public let errorString: String?
 }
 
@@ -73,6 +68,16 @@ public struct TransmissionTorrentTrackerStat: Decodable, Sendable {
     public let seederCount: Int?
     public let leecherCount: Int?
     public let downloadCount: Int?
+    public let tier: Int?
+    public let lastAnnounceSucceeded: Bool?
+    public let lastAnnounceTimedOut: Bool?
+    public let lastAnnouncePeerCount: Int?
+    public let hasAnnounced: Bool?
+    public let hasScraped: Bool?
+    public let lastScrapeResult: String?
+    public let lastScrapeTime: Int?
+    public let lastScrapeSucceeded: Bool?
+    public let nextScrapeTime: Int?
 }
 
 public struct TransmissionTorrentPeer: Decodable, Sendable {

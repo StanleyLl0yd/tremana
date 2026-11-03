@@ -1,20 +1,23 @@
 import SwiftUI
 import TreManaCore
 
-private enum InspectorTab: String, CaseIterable, Identifiable {
+enum InspectorTab: String, CaseIterable, Identifiable {
     case overview = "Details"
     case files = "Files"
     case trackers = "Trackers"
     case peers = "Peers"
     case webSeeds = "Web Seeds"
-    case limits = "Limits"
 
     var id: Self { self }
 }
 
 struct TorrentInspectorView: View {
     @Environment(TreManaModel.self) private var model
-    @State private var selectedTab: InspectorTab = .overview
+    @Binding var isExpanded: Bool
+    @Binding var selectedTab: InspectorTab
+    @State private var peerSortOrder: [KeyPathComparator<InspectorPeerRow>] = [
+        KeyPathComparator(\.downRate, order: .reverse)
+    ]
 
     private var selectedID: Int? {
         guard model.selectedTorrentIDs.count == 1 else { return nil }
@@ -34,11 +37,21 @@ struct TorrentInspectorView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(maxWidth: 710)
+                .frame(maxWidth: 545)
                 Spacer(minLength: 0)
+                Button {
+                    isExpanded.toggle()
+                } label: {
+                    Image(systemName: isExpanded
+                        ? "arrow.down.right.and.arrow.up.left"
+                        : "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(.borderless)
+                .help(isExpanded ? "Restore split view" : "Expand details")
+                .accessibilityLabel(isExpanded ? "Restore torrent list" : "Expand torrent details")
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             Divider()
 
             Group {
@@ -100,8 +113,6 @@ struct TorrentInspectorView: View {
             peers(detail)
         case .webSeeds:
             webSeeds(detail)
-        case .limits:
-            limits(detail)
         }
     }
 
@@ -109,8 +120,8 @@ struct TorrentInspectorView: View {
         ScrollView {
             LazyVGrid(
                 columns: [
-                    GridItem(.flexible(minimum: 240), alignment: .topLeading),
-                    GridItem(.flexible(minimum: 240), alignment: .topLeading)
+                    GridItem(.flexible(minimum: 260), alignment: .topLeading),
+                    GridItem(.flexible(minimum: 260), alignment: .topLeading)
                 ],
                 alignment: .leading,
                 spacing: 12
@@ -133,7 +144,8 @@ struct TorrentInspectorView: View {
                         InfoLine("Peers uploading", detail.peersSendingToUs.map(String.init) ?? "—")
                         InfoLine("Peers downloading", detail.peersGettingFromUs.map(String.init) ?? "—")
                     }
-                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
                 }
                 GroupBox("Information") {
                     VStack(spacing: 7) {
@@ -152,7 +164,8 @@ struct TorrentInspectorView: View {
                             InfoLine("Transmission error", error)
                         }
                     }
-                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
                 }
             }
             .padding(12)
@@ -207,72 +220,147 @@ struct TorrentInspectorView: View {
                     ForEach(stats.indices, id: \.self) { index in
                         let stat = stats[index]
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(stat.host ?? stat.announce ?? "Tracker")
-                                .font(.subheadline.weight(.medium))
-                            Text(stat.announce ?? "—")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                            Text("Seeders: \(stat.seederCount.map(String.init) ?? "—")  ·  Leechers: \(stat.leecherCount.map(String.init) ?? "—")  ·  \(stat.lastAnnounceResult ?? "No announcement result")")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(stat.host ?? stat.announce ?? "Tracker")
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                    if let announce = stat.announce {
+                                        Text(announce)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                            .help(announce)
+                                            .textSelection(.enabled)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                Text("Seeds \(stat.seederCount.map(String.init) ?? "—")")
+                                Text("Leechers \(stat.leecherCount.map(String.init) ?? "—")")
+                                Text("Peers \(stat.lastAnnouncePeerCount.map(String.init) ?? "—")")
+                            }
+                            HStack(spacing: 10) {
+                                Label(announceStatus(stat), systemImage: announceIcon(stat))
+                                    .foregroundStyle(stat.lastAnnounceSucceeded == false
+                                        ? Color.orange : Color.secondary)
+                                Text("Last \(date(stat.lastAnnounceTime))")
+                                Text("Next \(date(stat.nextAnnounceTime))")
+                                if let tier = stat.tier {
+                                    Text("Tier \(tier)")
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            if let result = stat.lastAnnounceResult, !result.isEmpty,
+                               result.lowercased() != "success" {
+                                Text(result)
+                                    .font(.caption2)
+                                    .foregroundStyle(stat.lastAnnounceSucceeded == false
+                                        ? Color.orange : Color.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            if let scrape = stat.lastScrapeResult, !scrape.isEmpty,
+                               scrape.lowercased() != "success" {
+                                Text("Scrape: \(scrape)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(.vertical, 3)
                     }
                 }
                 .listStyle(.plain)
             } else if !configured.isEmpty {
                 List {
                     ForEach(configured.indices, id: \.self) { index in
-                        Text(configured[index].announce ?? "Tracker")
-                            .textSelection(.enabled)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(configured[index].announce ?? "Tracker")
+                                .font(.subheadline)
+                                .textSelection(.enabled)
+                            if let tier = configured[index].tier {
+                                Text("Tier \(tier) · No announce statistics yet")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
             } else {
-                placeholder("No trackers reported", symbol: "point.3.connected.trianglepath.dotted")
+                placeholder("No trackers reported", symbol: "network")
             }
         }
     }
 
+    private func announceStatus(_ stat: TransmissionTorrentTrackerStat) -> String {
+        if stat.lastAnnounceTimedOut == true { return "Timed out" }
+        if stat.lastAnnounceSucceeded == true { return "Announced" }
+        if stat.lastAnnounceSucceeded == false && stat.hasAnnounced == true {
+            return "Announce failed"
+        }
+        if stat.hasAnnounced == true { return "Announced" }
+        return "Not announced"
+    }
+
+    private func announceIcon(_ stat: TransmissionTorrentTrackerStat) -> String {
+        if stat.lastAnnounceTimedOut == true || stat.lastAnnounceSucceeded == false {
+            return "exclamationmark.triangle"
+        }
+        if stat.lastAnnounceSucceeded == true { return "checkmark.circle" }
+        return "clock"
+    }
+
     private func peers(_ detail: TransmissionTorrentDetail) -> some View {
-        let entries = detail.peers ?? []
+        let rows: [InspectorPeerRow] = (detail.peers ?? []).enumerated().map {
+            index, peer in
+            InspectorPeerRow(
+                id: index,
+                address: peer.address + (peer.port.map { ":\($0)" } ?? ""),
+                client: peer.clientName ?? "Unknown",
+                progress: peer.progress ?? -1,
+                downRate: peer.rateToClient ?? 0,
+                upRate: peer.rateToPeer ?? 0
+            )
+        }
         return Group {
-            if entries.isEmpty {
+            if rows.isEmpty {
                 placeholder("No connected peers", symbol: "person.2")
             } else {
-                List {
-                    ForEach(entries.indices, id: \.self) { index in
-                        let peer = entries[index]
-                        HStack(spacing: 14) {
-                            Text(peer.address + (peer.port.map { ":\($0)" } ?? ""))
-                                .frame(minWidth: 170, alignment: .leading)
-                                .textSelection(.enabled)
-                            Text(peer.clientName ?? "Unknown client")
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Spacer(minLength: 5)
-                            Text(peer.progress.map {
-                                $0.formatted(.percent.precision(.fractionLength(0)))
-                            } ?? "—")
-                                .monospacedDigit()
-                            Text("↓ " + rate(peer.rateToClient))
-                                .monospacedDigit()
-                            Text("↑ " + rate(peer.rateToPeer))
-                                .monospacedDigit()
-                        }
-                        .font(.caption)
+                Table(rows.sorted(using: peerSortOrder), sortOrder: $peerSortOrder) {
+                    TableColumn("Address", value: \.address)
+                    TableColumn("Client", value: \.client)
+                    TableColumn("Progress", value: \.progress) { row in
+                        Text(row.progress >= 0
+                            ? row.progress.formatted(.percent.precision(.fractionLength(0)))
+                            : "—")
+                            .monospacedDigit()
+                    }
+                    TableColumn("↓ Download", value: \.downRate) { row in
+                        Text(rate(row.downRate)).monospacedDigit()
+                    }
+                    TableColumn("↑ Upload", value: \.upRate) { row in
+                        Text(rate(row.upRate)).monospacedDigit()
                     }
                 }
-                .listStyle(.plain)
+                .alternatingRowBackgrounds(.disabled)
+                .accessibilityLabel("Peers; click a column header to sort")
             }
         }
     }
 
     private func webSeeds(_ detail: TransmissionTorrentDetail) -> some View {
         let entries = detail.webseeds ?? []
-        return Group {
+        return VStack(spacing: 0) {
+            Text("HTTP/HTTPS mirrors that supply torrent pieces alongside regular peers.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+            Divider()
             if entries.isEmpty {
-                placeholder("No web seeds reported", symbol: "network")
+                placeholder("This torrent has no web seeds", symbol: "network")
             } else {
                 List {
                     ForEach(entries.indices, id: \.self) { index in
@@ -283,26 +371,6 @@ struct TorrentInspectorView: View {
                 }
                 .listStyle(.plain)
             }
-        }
-    }
-
-    private func limits(_ detail: TransmissionTorrentDetail) -> some View {
-        ScrollView {
-            GroupBox("Torrent limits (read-only)") {
-                VStack(spacing: 9) {
-                    InfoLine("Download", limit(detail.downloadLimited, detail.downloadLimit))
-                    InfoLine("Upload", limit(detail.uploadLimited, detail.uploadLimit))
-                    InfoLine("Honor session limits", detail.honorsSessionLimits.map {
-                        $0 ? "Yes" : "No"
-                    } ?? "Unknown")
-                    Text("Editing torrent limits will be added separately. These values are read from Transmission.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, 4)
-            }
-            .padding(12)
         }
     }
 
@@ -334,16 +402,19 @@ struct TorrentInspectorView: View {
             .formatted(date: .abbreviated, time: .shortened)
     }
 
-    private func limit(_ enabled: Bool?, _ value: Int?) -> String {
-        guard let enabled else { return "Unknown" }
-        if !enabled { return "Unlimited" }
-        return value.map { "\($0) KB/s" } ?? "Unknown"
-    }
-
     private func completion(_ completed: Int64, _ total: Int64) -> Double {
         guard total > 0 else { return 1 }
         return min(1, max(0, Double(completed) / Double(total)))
     }
+}
+
+private struct InspectorPeerRow: Identifiable {
+    let id: Int
+    let address: String
+    let client: String
+    let progress: Double
+    let downRate: Int64
+    let upRate: Int64
 }
 
 private struct InfoLine: View {
@@ -359,7 +430,7 @@ private struct InfoLine: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title)
                 .foregroundStyle(.secondary)
-                .frame(width: 140, alignment: .trailing)
+                .frame(width: 112, alignment: .trailing)
             Text(value)
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)

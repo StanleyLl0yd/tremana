@@ -109,7 +109,7 @@ struct TransmissionRPCTests {
 
     @Test func detailsRequestUsesOnlyOneExplicitTorrentID() async throws {
         MockURLProtocol.responses.replace([
-            MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":9,"name":"Sample","status":4,"percentDone":0.6,"downloadDir":"/media/torrents","files":[{"name":"video.mkv","length":1024,"bytesCompleted":512}],"fileStats":[{"wanted":true,"priority":0,"bytesCompleted":512}],"peers":[{"address":"192.0.2.1","port":51413,"clientName":"Client","progress":0.5,"rateToClient":4096,"rateToPeer":0}],"trackerStats":[{"host":"tracker.example","announce":"https://tracker.example/announce"}],"webseeds":["https://cdn.example/file"]}]}}"#)
+            MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":9,"name":"Sample","status":4,"percentDone":0.6,"downloadDir":"/media/torrents","files":[{"name":"video.mkv","length":1024,"bytesCompleted":512}],"fileStats":[{"wanted":true,"priority":0,"bytesCompleted":512}],"peers":[{"address":"192.0.2.1","port":51413,"clientName":"Client","progress":0.5,"rateToClient":4096,"rateToPeer":0}],"trackerStats":[{"host":"tracker.example","announce":"https://tracker.example/announce","tier":1,"seederCount":42,"leecherCount":18,"hasAnnounced":true,"lastAnnounceSucceeded":true,"lastAnnouncePeerCount":12,"lastAnnounceTime":1700000000,"nextAnnounceTime":1700001800,"lastScrapeResult":"Success","lastScrapeTime":1700000010}],"webseeds":["https://cdn.example/file"]}]}}"#)
         ])
         let client = try makeClient()
         let result = try #require(try await client.torrentDetails(id: 9))
@@ -118,6 +118,12 @@ struct TransmissionRPCTests {
         #expect(result.fileStats?.first?.wanted == true)
         #expect(result.peers?.first?.rateToClient == 4096)
         #expect(result.trackerStats?.first?.host == "tracker.example")
+        #expect(result.trackerStats?.first?.lastAnnounceSucceeded == true)
+        #expect(result.trackerStats?.first?.seederCount == 42)
+        #expect(result.trackerStats?.first?.leecherCount == 18)
+        #expect(result.trackerStats?.first?.lastAnnouncePeerCount == 12)
+        #expect(result.trackerStats?.first?.nextAnnounceTime == 1700001800)
+        #expect(result.trackerStats?.first?.lastScrapeResult == "Success")
         #expect(result.webseeds == ["https://cdn.example/file"])
 
         let request = try #require(MockURLProtocol.responses.lastRequest)
@@ -129,6 +135,9 @@ struct TransmissionRPCTests {
         #expect(fields.contains("trackerStats"))
         #expect(fields.contains("peers"))
         #expect(fields.contains("webseeds"))
+        #expect(!fields.contains("downloadLimit"))
+        #expect(!fields.contains("uploadLimit"))
+        #expect(!fields.contains("honorsSessionLimits"))
     }
 
     @Test func detailsRejectInvalidIDBeforeAnyNetworkRequest() async throws {

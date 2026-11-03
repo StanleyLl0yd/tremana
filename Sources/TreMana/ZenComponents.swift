@@ -24,20 +24,6 @@ struct ConnectionHero: View {
     }
 }
 
-struct ZenStatusPill: View {
-    let title: String
-    let symbol: String
-
-    var body: some View {
-        Label(title, systemImage: symbol)
-            .font(.caption.weight(.medium))
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .glassEffect(.regular, in: Capsule())
-    }
-}
-
 struct TorrentProgressCell: View {
     let progress: Double
 
