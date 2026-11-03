@@ -291,6 +291,7 @@ private struct TorrentTableView: View {
     @Environment(TreManaModel.self) private var model
     let filter: TorrentFilter
     @State private var inspectorExpanded = false
+    @State private var inspectorTab: InspectorTab = .overview
 
     private var filteredTorrents: [TransmissionTorrent] {
         switch filter {
@@ -334,7 +335,7 @@ private struct TorrentTableView: View {
             Divider()
 
             if inspectorExpanded {
-                TorrentInspectorView(isExpanded: $inspectorExpanded)
+                TorrentInspectorView(isExpanded: $inspectorExpanded, selectedTab: $inspectorTab)
                     .frame(maxHeight: .infinity)
             } else {
                 VSplitView {
@@ -356,7 +357,7 @@ private struct TorrentTableView: View {
                     .accessibilityLabel("Transmission torrents")
                     .alternatingRowBackgrounds(.disabled)
                     .frame(minHeight: 85)
-                    TorrentInspectorView(isExpanded: $inspectorExpanded)
+                    TorrentInspectorView(isExpanded: $inspectorExpanded, selectedTab: $inspectorTab)
                         .frame(minHeight: 120, idealHeight: 315)
                 }
             }

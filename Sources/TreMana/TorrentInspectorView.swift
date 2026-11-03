@@ -1,7 +1,7 @@
 import SwiftUI
 import TreManaCore
 
-private enum InspectorTab: String, CaseIterable, Identifiable {
+enum InspectorTab: String, CaseIterable, Identifiable {
     case overview = "Details"
     case files = "Files"
     case trackers = "Trackers"
@@ -13,8 +13,8 @@ private enum InspectorTab: String, CaseIterable, Identifiable {
 
 struct TorrentInspectorView: View {
     @Environment(TreManaModel.self) private var model
-    @State private var selectedTab: InspectorTab = .overview
     @Binding var isExpanded: Bool
+    @Binding var selectedTab: InspectorTab
     @State private var peerSortOrder: [KeyPathComparator<InspectorPeerRow>] = [
         KeyPathComparator(\.downRate, order: .reverse)
     ]
