@@ -6,7 +6,7 @@ struct TreManaApp: App {
     @State private var model = TreManaModel()
 
     var body: some Scene {
-        WindowGroup {
+        Window("TreMana", id: "main") {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 840, minHeight: 560)

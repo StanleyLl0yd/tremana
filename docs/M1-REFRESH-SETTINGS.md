@@ -31,3 +31,14 @@ Acceptance on real Keenetic:
 4. Disable Auto Refresh: progress freezes until manual Refresh.
 5. Fixed 10 seconds: updates at a stable cadence while the window is active.
 6. Quit and reopen: settings persist; Disconnect stops all polling.
+
+
+## macOS foreground detection hardening
+
+`scenePhase.active` alone does not guarantee that a Mac window is focused.
+The polling view additionally uses SwiftUI `EnvironmentValues.appearsActive`
+(current API replacing deprecated `controlActiveState`) to decide whether
+the window should use the 5/15 second cadence or inactive 30-second cadence.
+When the window regains active appearance, TreMana refreshes once immediately.
+The app uses a single `Window` scene rather than a multiwindow `WindowGroup`
+to avoid competing auto-refresh loops sharing one Transmission connection.
