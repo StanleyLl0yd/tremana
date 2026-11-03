@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import TreManaCore
 import UniformTypeIdentifiers
 
@@ -17,7 +18,6 @@ struct ContentView: View {
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @State private var filter: TorrentFilter? = .all
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var showingVerifyConfirmation = false
     @State private var showingAddTorrent = false
 
     private var refreshConfiguration: RefreshConfiguration {
@@ -73,8 +73,7 @@ struct ContentView: View {
                     TorrentCommandBar(
                         showSidebar: columnVisibility == .detailOnly,
                         revealSidebar: { columnVisibility = .all },
-                        add: { showingAddTorrent = true },
-                        verify: { showingVerifyConfirmation = true }
+                        add: { showingAddTorrent = true }
                     )
                     Divider()
                     TorrentTableView(filter: filter ?? .all)
@@ -139,17 +138,6 @@ struct ContentView: View {
         .onChange(of: filter) { _, _ in
             model.selectedTorrentIDs.removeAll()
         }
-        .confirmationDialog(
-            "Verify \(model.selectedTorrentIDs.count) selected torrent(s)?",
-            isPresented: $showingVerifyConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Verify") {
-                Task { await model.perform(.verify) }
-            }
-        } message: {
-            Text("Verification can temporarily interrupt active transfers.")
-        }
     }
 }
 
@@ -159,7 +147,6 @@ private struct TorrentCommandBar: View {
     let showSidebar: Bool
     let revealSidebar: () -> Void
     let add: () -> Void
-    let verify: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
@@ -179,12 +166,6 @@ private struct TorrentCommandBar: View {
                 Task { await model.perform(.stop) }
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-            CommandButton(title: "Verify", symbol: "checkmark.shield", action: verify)
-                .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-            CommandButton(title: "Refresh", symbol: "arrow.clockwise") {
-                Task { await model.refresh() }
-            }
-            .disabled(model.isBusy || model.isRefreshing)
             CommandButton(title: "Disconnect", symbol: "network.slash") {
                 model.disconnect()
             }
@@ -305,6 +286,10 @@ private struct TorrentTableView: View {
     let filter: TorrentFilter
     @State private var inspectorExpanded = false
     @State private var inspectorTab: InspectorTab = .overview
+    @State private var pendingVerifyIDs: [Int] = []
+    @State private var pendingRemoveIDs: [Int] = []
+    @State private var showingVerifyDialog = false
+    @State private var showingRemoveDialog = false
     @SceneStorage("com.sl.tremana.table-columns.v1")
     private var columnCustomization: TableColumnCustomization<TransmissionTorrent>
 
@@ -371,6 +356,68 @@ private struct TorrentTableView: View {
                             .defaultVisibility(column.visibleByDefault ? .visible : .hidden)
                         }
                     }
+                    .contextMenu(forSelectionType: Int.self) { selection in
+                        Button {
+                            Task { await model.perform(.start, ids: Array(selection)) }
+                        } label: {
+                            Label("Start", systemImage: "play.fill")
+                        }
+                        .disabled(selection.isEmpty || model.isBusy)
+
+                        Button {
+                            Task { await model.perform(.startNow, ids: Array(selection)) }
+                        } label: {
+                            Label("Start Now", systemImage: "play.circle.fill")
+                        }
+                        .disabled(selection.isEmpty || model.isBusy)
+
+                        Button {
+                            Task { await model.perform(.stop, ids: Array(selection)) }
+                        } label: {
+                            Label("Pause", systemImage: "pause.fill")
+                        }
+                        .disabled(selection.isEmpty || model.isBusy)
+
+                        Divider()
+
+                        Button {
+                            pendingVerifyIDs = Array(selection).sorted()
+                            showingVerifyDialog = true
+                        } label: {
+                            Label("Verify Downloaded Data…", systemImage: "checkmark.shield")
+                        }
+                        .disabled(selection.isEmpty || model.isBusy)
+
+                        Button {
+                            Task { await model.perform(.reannounce, ids: Array(selection)) }
+                        } label: {
+                            Label("Reannounce to Trackers", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(selection.isEmpty || model.isBusy)
+
+                        if selection.count == 1, let id = selection.first {
+                            Divider()
+                            Button {
+                                Task {
+                                    guard let link = await model.magnetLink(for: id) else { return }
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(link, forType: .string)
+                                }
+                            } label: {
+                                Label("Copy Magnet Link", systemImage: "link")
+                            }
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            pendingRemoveIDs = Array(selection).sorted()
+                            showingRemoveDialog = true
+                        } label: {
+                            Label("Remove Torrent…", systemImage: "trash")
+                        }
+                        .disabled(selection.isEmpty || model.isBusy)
+                    }
                     .accessibilityLabel("Transmission torrents")
                     .alternatingRowBackgrounds(.disabled)
                     .frame(minHeight: 85)
@@ -420,6 +467,36 @@ private struct TorrentTableView: View {
             .frame(height: 34)
         }
         .navigationTitle("Torrents")
+        .confirmationDialog(
+            "Verify \(pendingVerifyIDs.count) torrent(s)?",
+            isPresented: $showingVerifyDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Verify Downloaded Data") {
+                let ids = pendingVerifyIDs
+                Task { await model.perform(.verify, ids: ids) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Transmission rereads local pieces and checks their BitTorrent hashes. It does not scan for viruses and may temporarily interrupt transfers.")
+        }
+        .confirmationDialog(
+            "Remove \(pendingRemoveIDs.count) torrent(s) from Transmission?",
+            isPresented: $showingRemoveDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Remove Torrent, Keep Files") {
+                let ids = pendingRemoveIDs
+                Task { await model.removeTorrents(ids: ids, deleteLocalData: false) }
+            }
+            Button("Remove Torrent and Delete Server Files", role: .destructive) {
+                let ids = pendingRemoveIDs
+                Task { await model.removeTorrents(ids: ids, deleteLocalData: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Remove affects Transmission on the Keenetic. Choosing Delete Server Files permanently removes downloaded data from the server. This cannot be undone by TreMana.")
+        }
     }
 }
 

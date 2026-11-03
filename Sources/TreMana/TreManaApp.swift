@@ -16,5 +16,14 @@ struct TreManaApp: App {
         Settings {
             RefreshSettingsView()
         }
+        .commands {
+            CommandMenu("Torrents") {
+                Button("Refresh Torrent List") {
+                    Task { await model.refresh() }
+                }
+                .keyboardShortcut("r", modifiers: [.command])
+                .disabled(!model.isConnected || model.isBusy || model.isRefreshing)
+            }
+        }
     }
 }
