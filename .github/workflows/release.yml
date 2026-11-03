@@ -3,7 +3,7 @@ name: Publish GitHub Release
 on:
   push:
     branches: [main]
-    paths: [release/VERSION]
+    paths: [release/VERSION, release/REQUEST]
   workflow_dispatch:
 
 permissions:
@@ -102,7 +102,9 @@ jobs:
             echo "Release already exists; refusing overwrite" >&2
             exit 1
           fi
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' 2>/dev/null || true)"
+          # The single-ref endpoint can return a JSON null for absent tags.
+          # Matching-refs returns [] when absent; filter exact name, never a prefix.
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" --jq ".[] | select(.ref == \"refs/tags/$RELEASE_TAG\") | .object.sha")"
           if [[ -n "$existing" && "$existing" != "$GITHUB_SHA" ]]; then
             echo "Tag points to another commit" >&2
             exit 1

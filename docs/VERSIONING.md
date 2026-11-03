@@ -15,3 +15,9 @@ Stable direct ZIP format:
 https://github.com/StanleyLl0yd/tremana/releases/download/vX.Y.Z/TreMana-vX.Y.Z-macOS27-arm64.zip
 
 The current CI uses ad-hoc signing only; Developer ID and Apple notarization are not set up. These releases must never be represented as notarized.
+
+If publication fails after a successful package build, fix the release workflow via
+another reviewed PR and update release/REQUEST to a new attempt marker. That
+triggers a retry on protected main without changing the semantic version or
+retagging any published release. Existing tags pointing to another commit
+are treated as hard errors, never forcibly moved.
