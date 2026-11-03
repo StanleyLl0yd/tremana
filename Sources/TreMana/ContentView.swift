@@ -437,6 +437,8 @@ private struct TorrentTableView: View {
                     Group {
                         if footerMessage == "Connection remembered securely" {
                             Text("Connection remembered securely")
+                        } else if footerMessage == "File selection updated" {
+                            Text("File selection updated")
                         } else {
                             Text(footerMessage)
                         }
@@ -444,7 +446,7 @@ private struct TorrentTableView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(isError ? Color.red : Color.secondary)
-                        .help(footerMessage)
+                        .help(LocalizedStringKey(footerMessage))
                 } else {
                     Label(LocalizedStringKey(model.isBusy ? "Applying…" : model.isRefreshing ? "Syncing…" : "Connected"),
                           systemImage: "checkmark.circle")
