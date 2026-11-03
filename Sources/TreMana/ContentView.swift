@@ -16,6 +16,7 @@ struct ContentView: View {
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @State private var filter: TorrentFilter? = .all
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingVerifyConfirmation = false
     @State private var showingAddTorrent = false
 
@@ -36,64 +37,61 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $filter) {
-                Label("All Torrents", systemImage: "tray.full")
-                    .tag(TorrentFilter.all)
-                Label("Downloading", systemImage: "arrow.down.circle")
-                    .tag(TorrentFilter.downloading)
-                Label("Seeding", systemImage: "arrow.up.circle")
-                    .tag(TorrentFilter.seeding)
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("LIBRARY")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button {
+                        columnVisibility = .detailOnly
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Hide Sidebar")
+                    .accessibilityLabel("Hide Sidebar")
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                List(selection: $filter) {
+                    Label("All Torrents", systemImage: "tray.full")
+                        .tag(TorrentFilter.all)
+                    Label("Downloading", systemImage: "arrow.down.circle")
+                        .tag(TorrentFilter.downloading)
+                    Label("Seeding", systemImage: "arrow.up.circle")
+                        .tag(TorrentFilter.seeding)
+                }
+                .listStyle(.sidebar)
             }
             .navigationTitle("TreMana")
-            .listStyle(.sidebar)
+            .toolbar(removing: .sidebarToggle)
         } detail: {
-            if model.isConnected {
-                TorrentTableView(filter: filter ?? .all)
-            } else {
-                ConnectionView()
-            }
-        }
-        .toolbar {
-            if model.isConnected {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button {
-                        showingAddTorrent = true
-                    } label: {
-                        Label("Add Torrent", systemImage: "plus")
+            VStack(spacing: 0) {
+                if model.isConnected {
+                    TorrentCommandBar(
+                        showSidebar: columnVisibility == .detailOnly,
+                        revealSidebar: { columnVisibility = .all },
+                        add: { showingAddTorrent = true },
+                        verify: { showingVerifyConfirmation = true }
+                    )
+                    Divider()
+                    TorrentTableView(filter: filter ?? .all)
+                } else {
+                    if columnVisibility == .detailOnly {
+                        HStack {
+                            Button {
+                                columnVisibility = .all
+                            } label: {
+                                Label("Show Sidebar", systemImage: "sidebar.left")
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 9)
                     }
-                    .disabled(model.isBusy)
-
-                    Button {
-                        Task { await model.perform(.start) }
-                    } label: {
-                        Label("Start", systemImage: "play.fill")
-                    }
-                    .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-
-                    Button {
-                        Task { await model.perform(.stop) }
-                    } label: {
-                        Label("Stop", systemImage: "pause.fill")
-                    }
-                    .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-
-                    Button {
-                        showingVerifyConfirmation = true
-                    } label: {
-                        Label("Verify", systemImage: "checkmark.shield")
-                    }
-                    .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-
-                    Button {
-                        Task { await model.refresh() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(model.isBusy)
-                }
-                ToolbarItem {
-                    Button("Disconnect") { model.disconnect() }
+                    ConnectionView()
                 }
             }
         }
@@ -139,6 +137,76 @@ struct ContentView: View {
         } message: {
             Text("Verification can temporarily interrupt active transfers.")
         }
+    }
+}
+
+private struct TorrentCommandBar: View {
+    @Environment(TreManaModel.self) private var model
+
+    let showSidebar: Bool
+    let revealSidebar: () -> Void
+    let add: () -> Void
+    let verify: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if showSidebar {
+                Button(action: revealSidebar) {
+                    Label("Show Sidebar", systemImage: "sidebar.left")
+                }
+                .help("Show Sidebar")
+            }
+            CommandButton(title: "Add Torrent", symbol: "plus", action: add)
+                .disabled(model.isBusy)
+            CommandButton(title: "Start", symbol: "play.fill") {
+                Task { await model.perform(.start) }
+            }
+            .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
+            CommandButton(title: "Pause", symbol: "pause.fill") {
+                Task { await model.perform(.stop) }
+            }
+            .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
+            CommandButton(title: "Verify", symbol: "checkmark.shield", action: verify)
+                .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
+            CommandButton(title: "Refresh", symbol: "arrow.clockwise") {
+                Task { await model.refresh() }
+            }
+            .disabled(model.isBusy || model.isRefreshing)
+            CommandButton(title: "Disconnect", symbol: "network.slash") {
+                model.disconnect()
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct CommandButton: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .medium))
+                    .frame(height: 23)
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .frame(width: 80, height: 50)
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.bordered)
+        .help(title)
+        .accessibilityLabel(title)
     }
 }
 
@@ -315,9 +383,9 @@ private struct TorrentTableView: View {
                         .lineLimit(2)
                         .help(footerMessage)
                 } else {
-                    Image(systemName: model.isBusy ? "arrow.triangle.2.circlepath" : "checkmark.circle")
+                    Image(systemName: model.isBusy || model.isRefreshing ? "arrow.triangle.2.circlepath" : "checkmark.circle")
                         .foregroundStyle(.secondary)
-                    Text(model.isBusy ? "Syncing…" : "Connected")
+                    Text(model.isBusy ? "Applying changes…" : model.isRefreshing ? "Syncing…" : "Connected")
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)

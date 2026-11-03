@@ -70,15 +70,6 @@ struct TorrentStatusCell: View {
         }
     }
 
-    private var color: Color {
-        switch status {
-        case 4: .accentColor
-        case 6: .green
-        case 1, 2: .orange
-        default: .secondary
-        }
-    }
-
     private var label: String {
         switch status {
         case 0: "Stopped"
@@ -94,7 +85,7 @@ struct TorrentStatusCell: View {
     var body: some View {
         Label(label, systemImage: iconName)
             .font(.subheadline)
-            .foregroundStyle(color)
+            .foregroundStyle(.primary)
             .lineLimit(1)
     }
 }

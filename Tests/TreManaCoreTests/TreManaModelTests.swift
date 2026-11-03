@@ -237,6 +237,34 @@ struct TreManaModelTests {
         #expect(!model.isBusy)
     }
 
+    @Test @MainActor func pauseIsNeverDroppedDuringBackgroundPolling() async {
+        let remote = ControlledRPC(hold: .refresh, torrents: [fixtureTorrent(1)])
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+
+        let pendingPoll = Task { await model.refresh() }
+        await remote.waitForHeldCall()
+        #expect(model.isRefreshing)
+        #expect(!model.isBusy)
+
+        // Previous implementation shared isBusy with polling and silently
+        // discarded this action; it must reach the daemon while GET is pending.
+        await model.perform(.stop)
+        let performed = await remote.performedActions()
+        #expect(performed.count == 1)
+        #expect(performed.first?.method == "torrent-stop")
+        #expect(performed.first?.ids == [1])
+        #expect(!model.isBusy)
+
+        await remote.resumeHeldCall()
+        await pendingPoll.value
+        #expect(!model.isRefreshing)
+        #expect(model.isConnected)
+        #expect(model.errorMessage == nil)
+    }
+
     @Test @MainActor func actionsAreLimitedToExistingSelectedTorrents() async {
         let remote = ControlledRPC(
             hold: .none, torrents: [fixtureTorrent(1), fixtureTorrent(2)]
