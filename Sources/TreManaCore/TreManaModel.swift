@@ -4,6 +4,7 @@ import Observation
 public protocol TransmissionRPCProviding: Sendable {
     func sessionInfo() async throws -> TransmissionSession
     func torrents() async throws -> [TransmissionTorrent]
+    func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func perform(_ action: TorrentAction, ids: [Int]) async throws
     func addTorrent(_ source: TorrentAddSource, startImmediately: Bool) async throws -> TorrentAddOutcome
 }
@@ -33,6 +34,9 @@ public final class TreManaModel {
     public private(set) var server: TransmissionSession?
     public private(set) var torrents: [TransmissionTorrent] = []
     public private(set) var lastRefreshAt: Date?
+    public private(set) var selectedTorrentDetail: TransmissionTorrentDetail?
+    public private(set) var detailErrorMessage: String?
+    public private(set) var isLoadingDetail = false
 
     @ObservationIgnored
     private let makeClient: @MainActor (TransmissionConnection) -> any TransmissionRPCProviding
@@ -48,6 +52,9 @@ public final class TreManaModel {
 
     @ObservationIgnored
     private var profileSelectionGeneration: UInt64 = 0
+
+    @ObservationIgnored
+    private var detailGeneration: UInt64 = 0
 
     @ObservationIgnored
     private let profileStore: any ConnectionProfileStoring
@@ -210,6 +217,9 @@ public final class TreManaModel {
             client = newClient
             torrents = loaded
             lastRefreshAt = .now
+            detailGeneration &+= 1
+            selectedTorrentDetail = nil
+            detailErrorMessage = nil
             selectedTorrentIDs = []
             noticeMessage = nil
             password = ""
@@ -260,6 +270,46 @@ public final class TreManaModel {
         } catch {
             guard connectionGeneration == generation else { return }
             errorMessage = error.localizedDescription
+        }
+    }
+
+    public func loadSelectedTorrentDetails() async {
+        detailGeneration &+= 1
+        let ticket = detailGeneration
+        let connectionTicket = connectionGeneration
+
+        guard let client, selectedTorrentIDs.count == 1,
+              let id = selectedTorrentIDs.first, id > 0,
+              torrents.contains(where: { $0.id == id }) else {
+            selectedTorrentDetail = nil
+            detailErrorMessage = nil
+            isLoadingDetail = false
+            return
+        }
+
+        selectedTorrentDetail = nil
+        detailErrorMessage = nil
+        isLoadingDetail = true
+        defer {
+            if detailGeneration == ticket {
+                isLoadingDetail = false
+            }
+        }
+
+        do {
+            let item = try await client.torrentDetails(id: id)
+            guard connectionGeneration == connectionTicket,
+                  detailGeneration == ticket,
+                  selectedTorrentIDs == Set([id]) else { return }
+            selectedTorrentDetail = item
+            if item == nil {
+                detailErrorMessage = "The selected torrent is no longer available."
+            }
+        } catch {
+            guard connectionGeneration == connectionTicket,
+                  detailGeneration == ticket,
+                  selectedTorrentIDs == Set([id]) else { return }
+            detailErrorMessage = error.localizedDescription
         }
     }
 
@@ -368,6 +418,10 @@ public final class TreManaModel {
         server = nil
         torrents = []
         lastRefreshAt = nil
+        detailGeneration &+= 1
+        selectedTorrentDetail = nil
+        detailErrorMessage = nil
+        isLoadingDetail = false
         selectedTorrentIDs = []
         errorMessage = nil
         noticeMessage = nil

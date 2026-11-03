@@ -366,6 +366,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         ))
     }
 
+    func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail? { nil }
+
     func perform(_ action: TorrentAction, ids: [Int]) async throws {
         recordedActions.append((method: action.rawValue, ids: ids))
         if hold == .action {
