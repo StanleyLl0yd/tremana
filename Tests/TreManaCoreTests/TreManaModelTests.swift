@@ -4,6 +4,107 @@ import Testing
 
 @Suite("Connection lifecycle")
 struct TreManaModelTests {
+    @Test @MainActor func rememberedConnectionRestoresAfterAppRestart() async throws {
+        let suiteName = "TreMana.Remember.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let passwords = MemoryPasswords()
+        let profiles = UserDefaultsProfileStore(
+            suiteName: suiteName, passwords: passwords
+        )
+        let remote = ControlledRPC(hold: .none, torrents: [])
+        let original = TreManaModel(
+            makeClient: { _ in remote }, profileStore: profiles
+        )
+        original.rpcURL = "https://home.example/transmission/rpc"
+        original.username = "transmission"
+        original.password = "secret-value"
+        original.rememberPassword = true
+
+        await original.connect()
+        #expect(original.isConnected)
+        #expect(original.profileErrorMessage == nil)
+        #expect(original.noticeMessage == "Connection remembered securely")
+        #expect(original.password.isEmpty)
+        let saved = try await profiles.list()
+        let first = try #require(saved.first)
+        #expect(saved.count == 1)
+        #expect(first.name == "home.example")
+        #expect(first.username == "transmission")
+        #expect(try await profiles.password(for: first.id) == "secret-value")
+        #expect(await profiles.preferredProfileID() == first.id)
+
+        let capture = ConnectionCapture()
+        let relaunched = TreManaModel(
+            makeClient: { connection in
+                capture.connection = connection
+                return remote
+            },
+            profileStore: profiles
+        )
+        await relaunched.reloadProfiles()
+        #expect(relaunched.selectedProfileID == first.id)
+        #expect(relaunched.profileName == "home.example")
+        #expect(relaunched.rpcURL == first.rpcURL)
+        #expect(relaunched.username == "transmission")
+        #expect(relaunched.rememberPassword)
+        #expect(relaunched.savedPasswordAvailable)
+        #expect(relaunched.password.isEmpty)
+
+        await relaunched.connect()
+        #expect(relaunched.isConnected)
+        #expect(capture.connection?.credentials?.password == "secret-value")
+        #expect(try await profiles.list().count == 1)
+    }
+
+    @Test @MainActor func noOptInNeverStoresCredentials() async throws {
+        let suiteName = "TreMana.OptOut.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let passwords = MemoryPasswords()
+        let store = UserDefaultsProfileStore(
+            suiteName: suiteName, passwords: passwords
+        )
+        let remote = ControlledRPC(hold: .none, torrents: [])
+        let model = TreManaModel(
+            makeClient: { _ in remote }, profileStore: store
+        )
+        model.rpcURL = "https://private.example/transmission/rpc"
+        model.username = "admin"
+        model.password = "never-persist"
+        #expect(!model.rememberPassword)
+
+        await model.connect()
+        #expect(model.isConnected)
+        #expect(model.password.isEmpty)
+        #expect(try await store.list().isEmpty)
+    }
+
+    @Test @MainActor func keychainSaveFailureDoesNotBreakConnection() async throws {
+        let suiteName = "TreMana.KeychainFailure.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = UserDefaultsProfileStore(
+            suiteName: suiteName, passwords: DeniedPasswords()
+        )
+        let remote = ControlledRPC(hold: .none, torrents: [])
+        let model = TreManaModel(
+            makeClient: { _ in remote }, profileStore: store
+        )
+        model.rpcURL = "https://router.example/transmission/rpc"
+        model.username = "admin"
+        model.password = "secret"
+        model.rememberPassword = true
+
+        await model.connect()
+        #expect(model.isConnected)
+        #expect(model.errorMessage == nil)
+        #expect(model.profileErrorMessage?.contains("34018") == true)
+        #expect(try await store.list().isEmpty)
+        #expect(model.password.isEmpty)
+    }
+
     @Test @MainActor func keychainPasswordCannotLeakToEditedServer() async throws {
         let suiteName = "TreMana.Profiles.Model.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -35,6 +136,7 @@ struct TreManaModelTests {
         model.disconnect()
 
         model.rpcURL = "https://untrusted.example/transmission/rpc"
+        #expect(!model.canReuseSavedPassword)
         await model.connect()
         #expect(capture.connection?.url.host == "untrusted.example")
         #expect(capture.connection?.credentials?.password == "")
@@ -311,4 +413,12 @@ private actor ControlledRPC: TransmissionRPCProviding {
 @MainActor
 private final class ConnectionCapture {
     var connection: TransmissionConnection?
+}
+
+private actor DeniedPasswords: RPCPasswordStoring {
+    func read(for id: UUID) async throws -> String? { nil }
+    func upsert(_ password: String, for id: UUID) async throws {
+        throw ProfileStorageError.keychainFailure(-34018)
+    }
+    func remove(for id: UUID) async throws {}
 }

@@ -115,28 +115,26 @@ private struct ConnectionView: View {
                 }
                 .disabled(model.isBusy || model.profilesBusy)
 
-                TextField("Profile name", text: $form.profileName)
-                Toggle("Remember password in Keychain", isOn: $form.rememberPassword)
+                TextField("Profile name (optional)", text: $form.profileName)
+                Toggle("Remember this connection", isOn: $form.rememberPassword)
 
-                HStack {
-                    Button("Save Profile") {
-                        Task { await model.saveCurrentProfile() }
-                    }
-                    .disabled(model.profilesBusy || model.isBusy)
-
-                    Button("Delete Profile") {
-                        Task { await model.deleteSelectedProfile() }
-                    }
-                    .disabled(
-                        model.selectedProfileID == nil ||
-                        model.profilesBusy || model.isBusy
-                    )
-                }
-
-                if model.rememberPassword && model.password.isEmpty {
-                    Text("A saved Keychain password is used only when the server address and username match the saved profile.")
+                if model.rememberPassword {
+                    Text("After a successful connection, TreMana saves this profile. Passwords are kept in macOS Keychain, never in app settings.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if model.canReuseSavedPassword && model.rememberPassword
+                    && model.password.isEmpty {
+                    Label("Password saved securely. Leave the field empty to reuse it.", systemImage: "checkmark.shield")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if model.selectedProfileID != nil {
+                    Button("Forget Selected Connection") {
+                        Task { await model.deleteSelectedProfile() }
+                    }
+                    .disabled(model.profilesBusy || model.isBusy)
                 }
                 if let profileError = model.profileErrorMessage {
                     Text(profileError)
@@ -227,6 +225,12 @@ private struct TorrentTableView: View {
                 Text(notice)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(8)
+            }
+            if let profileError = model.profileErrorMessage {
+                Text(profileError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
                     .padding(8)
             }
             if let message = model.errorMessage {

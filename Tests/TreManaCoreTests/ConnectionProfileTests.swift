@@ -32,6 +32,22 @@ struct ConnectionProfileTests {
         #expect(try await passwords.read(for: profile.id) == nil)
     }
 
+    @Test func lastSelectedProfileTracksSaveAndDeletion() async throws {
+        let suiteName = "TreMana.Preferred.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = UserDefaultsProfileStore(
+            suiteName: suiteName, passwords: MemoryPasswords()
+        )
+        let profile = fixtureProfile()
+        try await store.save(profile, password: .remove)
+        await store.setPreferredProfileID(profile.id)
+        #expect(await store.preferredProfileID() == profile.id)
+        try await store.remove(id: profile.id)
+        #expect(await store.preferredProfileID() == nil)
+    }
+
     @Test func cannotReuseSavedPasswordForDifferentServer() async throws {
         let suiteName = "TreMana.Profiles.Test.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

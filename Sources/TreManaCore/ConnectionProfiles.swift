@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 public struct ConnectionProfile: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
@@ -47,7 +48,7 @@ public enum ProfileStorageError: Error, LocalizedError, Equatable, Sendable {
         case .profileNotFound:
             "The selected connection profile no longer exists."
         case .keychainFailure(let status):
-            "macOS Keychain returned error \(status)."
+            "macOS Keychain: \(SecCopyErrorMessageString(status, nil) as String? ?? "operation failed") (code \(status))."
         case .invalidKeychainPassword:
             "The stored Keychain password could not be decoded."
         }
@@ -65,10 +66,13 @@ public protocol ConnectionProfileStoring: Sendable {
     func password(for id: UUID) async throws -> String?
     func save(_ profile: ConnectionProfile, password: ProfilePasswordUpdate) async throws
     func remove(id: UUID) async throws
+    func preferredProfileID() async -> UUID?
+    func setPreferredProfileID(_ id: UUID?) async
 }
 
 public actor UserDefaultsProfileStore: ConnectionProfileStoring {
     private static let storageKey = "com.sl.tremana.profiles.v1"
+    private static let preferredKey = "com.sl.tremana.preferred-profile.v1"
     private let defaults: UserDefaults
     private let passwords: any RPCPasswordStoring
 
@@ -92,6 +96,14 @@ public actor UserDefaultsProfileStore: ConnectionProfileStoring {
             return []
         }
         return try JSONDecoder().decode([ConnectionProfile].self, from: data)
+    }
+
+    public func preferredProfileID() async -> UUID? {
+        defaults.string(forKey: Self.preferredKey).flatMap(UUID.init(uuidString:))
+    }
+
+    public func setPreferredProfileID(_ id: UUID?) async {
+        defaults.set(id?.uuidString, forKey: Self.preferredKey)
     }
 
     public func password(for id: UUID) async throws -> String? {
@@ -166,5 +178,8 @@ public actor UserDefaultsProfileStore: ConnectionProfileStoring {
         let data = try JSONEncoder().encode(current.filter { $0.id != id })
         try await passwords.remove(for: id)
         defaults.set(data, forKey: Self.storageKey)
+        if await preferredProfileID() == id {
+            await setPreferredProfileID(nil)
+        }
     }
 }
