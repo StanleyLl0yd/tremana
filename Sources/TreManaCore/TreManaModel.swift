@@ -79,7 +79,7 @@ public final class TreManaModel {
     private var detailGeneration: UInt64 = 0
 
     @ObservationIgnored
-    private var fileSelectionChangeInProgress = false
+    private var editingFileSelectionForID: Int?
 
     @ObservationIgnored
     private let profileStore: any ConnectionProfileStoring
@@ -316,9 +316,12 @@ public final class TreManaModel {
     }
 
     public func loadSelectedTorrentDetails() async {
-        // An automatic inspector poll must not re-enable controls using a
-        // snapshot taken while a file-selection mutation is in flight.
-        guard !fileSelectionChangeInProgress else { return }
+        // Suppress old detail snapshots for the edited torrent, but allow
+        // an immediate detail load if the user switches to a different torrent.
+        if let editingFileSelectionForID,
+           selectedTorrentIDs == Set([editingFileSelectionForID]) {
+            return
+        }
         detailGeneration &+= 1
         let ticket = detailGeneration
         let connectionTicket = connectionGeneration
@@ -386,10 +389,10 @@ public final class TreManaModel {
         detailErrorMessage = nil
         let ticket = connectionGeneration
         isBusy = true
-        fileSelectionChangeInProgress = true
+        editingFileSelectionForID = torrentID
         defer {
             if connectionGeneration == ticket {
-                fileSelectionChangeInProgress = false
+                editingFileSelectionForID = nil
                 isBusy = false
             }
         }
@@ -625,7 +628,7 @@ public final class TreManaModel {
         isRefreshingSwarm = false
         lastRefreshAt = nil
         detailGeneration &+= 1
-        fileSelectionChangeInProgress = false
+        editingFileSelectionForID = nil
         selectedTorrentDetail = nil
         detailErrorMessage = nil
         isLoadingDetail = false
