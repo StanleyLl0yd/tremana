@@ -2,12 +2,20 @@ import SwiftUI
 import TreManaCore
 
 struct RefreshSettingsView: View {
+    @AppStorage(AppearancePreference.key) private var appearance = AppearanceMode.system.rawValue
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
 
     var body: some View {
         Form {
+            Section("Appearance") {
+                Picker("Theme", selection: $appearance) {
+                    Text("System").tag(AppearanceMode.system.rawValue)
+                    Text("Light").tag(AppearanceMode.light.rawValue)
+                    Text("Dark").tag(AppearanceMode.dark.rawValue)
+                }
+            }
             Section("Torrent list") {
                 Toggle("Automatically refresh torrent information", isOn: $autoRefreshEnabled)
 
@@ -48,6 +56,6 @@ struct RefreshSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 490, height: 330)
+        .frame(width: 490, height: 390)
     }
 }

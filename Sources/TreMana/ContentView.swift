@@ -69,13 +69,13 @@ struct ContentView: View {
             .toolbar(removing: .sidebarToggle)
         } detail: {
             VStack(spacing: 0) {
+                TorrentCommandBar(
+                    showSidebar: columnVisibility == .detailOnly,
+                    revealSidebar: { columnVisibility = .all },
+                    add: { showingAddTorrent = true }
+                )
+                Divider()
                 if model.isConnected {
-                    TorrentCommandBar(
-                        showSidebar: columnVisibility == .detailOnly,
-                        revealSidebar: { columnVisibility = .all },
-                        add: { showingAddTorrent = true }
-                    )
-                    Divider()
                     TorrentTableView(filter: filter ?? .all)
                 } else {
                     if columnVisibility == .detailOnly {
@@ -150,6 +150,18 @@ private struct TorrentCommandBar: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            CommandButton(title: "Connect", symbol: "network") {
+                Task { await model.connect() }
+            }
+            .disabled(
+                model.isConnected || model.isBusy || model.profilesBusy
+                    || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
+            CommandButton(title: "Disconnect", symbol: "network.slash") {
+                model.disconnect()
+            }
+            .disabled(!model.isConnected && !model.isBusy)
+
             if showSidebar {
                 Button(action: revealSidebar) {
                     Label("Show Sidebar", systemImage: "sidebar.left")
@@ -166,9 +178,6 @@ private struct TorrentCommandBar: View {
                 Task { await model.perform(.stop) }
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-            CommandButton(title: "Disconnect", symbol: "network.slash") {
-                model.disconnect()
-            }
             Spacer(minLength: 0)
         }
         .padding(.leading, 10)
@@ -261,13 +270,6 @@ private struct ConnectionView: View {
                 SecureField("Password", text: $form.password)
                 Toggle("Allow unencrypted HTTP (trusted local network only)",
                        isOn: $form.allowsInsecureHTTP)
-            }
-            Section {
-                Button("Connect") {
-                    Task { await model.connect() }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.isBusy || model.profilesBusy)
             }
             if let message = model.errorMessage {
                 Text(message)
