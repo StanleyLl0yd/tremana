@@ -245,6 +245,63 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func removeUsesExplicitIDsAndDeletionFlag(_ deleteData: Bool) async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success"}"#)
+        ])
+        let client = try makeClient()
+        try await client.removeTorrents(ids: [8, 3, 8], deleteLocalData: deleteData)
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-remove")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["ids"] as? [Int] == [3, 8])
+        #expect(arguments["delete-local-data"] as? Bool == deleteData)
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func removeRejectsInvalidIDsWithoutContactingServer() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for invalid in [[], [0], [-1], [0, 10]] {
+            do {
+                try await client.removeTorrents(ids: invalid, deleteLocalData: true)
+                Issue.record("Expected rejection for \(invalid)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
+    @Test func magnetLinkIsFetchedForExactlyOneTorrent() async throws {
+        let magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":7,"magnetLink":"magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"}]}}"#)
+        ])
+        let client = try makeClient()
+        #expect(try await client.magnetLink(id: 7) == magnet)
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-get")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["ids"] as? [Int] == [7])
+        #expect(arguments["fields"] as? [String] == ["id", "magnetLink"])
+    }
+
+    @Test func magnetLinkRejectsNonPositiveIDs() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for id in [-1, 0] {
+            do {
+                _ = try await client.magnetLink(id: id)
+                Issue.record("Expected refusal for \(id)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
     @Test func magnetAddUsesLegacyRPC16Vocabulary() async throws {
         MockURLProtocol.responses.replace([
             MockResponse(body: #"{"result":"success","arguments":{"torrent-added":{"id":17,"name":"Sample","hashString":"0123456789abcdef0123456789abcdef01234567"}}}"#)
