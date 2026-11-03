@@ -24,7 +24,8 @@ struct ConnectionProfileTests {
         let json = try #require(String(data: bytes, encoding: .utf8))
         #expect(!json.contains(secret))
         #expect(json.contains(profile.name))
-        #expect(json.contains(profile.rpcURL))
+        let decoded = try JSONDecoder().decode([ConnectionProfile].self, from: bytes)
+        #expect(decoded == [profile])
 
         try await store.remove(id: profile.id)
         #expect(try await store.list().isEmpty)
