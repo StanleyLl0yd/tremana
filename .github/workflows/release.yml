@@ -77,6 +77,10 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" | grep -Fx "$RELEASE_VERSION"
           /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist" | grep -Fx '27.0'
           codesign --verify --strict "$app"
+          for locale in en ru; do
+            test -s "$app/Contents/Resources/$locale.lproj/Localizable.strings"
+            plutil -lint "$app/Contents/Resources/$locale.lproj/Localizable.strings"
+          done
           test -x "$app/Contents/MacOS/TreMana"
           archs="$(lipo -archs "$app/Contents/MacOS/TreMana")"
           [[ "$archs" == "arm64" ]] || {
