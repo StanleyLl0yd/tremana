@@ -113,6 +113,7 @@ private struct ConnectionView: View {
                 .onChange(of: model.selectedProfileID) { _, id in
                     Task { await model.chooseProfile(id) }
                 }
+                .disabled(model.isBusy || model.profilesBusy)
 
                 TextField("Profile name", text: $form.profileName)
                 Toggle("Remember password in Keychain", isOn: $form.rememberPassword)

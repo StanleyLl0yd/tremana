@@ -56,6 +56,25 @@ struct ConnectionProfileTests {
         #expect(try await store.password(for: original.id) == "secure-value")
     }
 
+    @Test func cannotPreservePasswordThatWasNeverStored() async throws {
+        let suiteName = "TreMana.Profiles.Test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = UserDefaultsProfileStore(
+            defaults: defaults, passwords: MemoryPasswords()
+        )
+        let profile = fixtureProfile()
+        try await store.save(profile, password: .remove)
+
+        do {
+            try await store.save(profile, password: .keep)
+            Issue.record("Expected refusal for missing saved password")
+        } catch let error as ProfileStorageError {
+            #expect(error == .passwordRequired)
+        }
+    }
+
     @Test func credentialsEmbeddedInURLAreRefused() async throws {
         let suiteName = "TreMana.Profiles.Test.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
