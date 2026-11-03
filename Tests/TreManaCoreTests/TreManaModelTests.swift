@@ -142,6 +142,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         self.contents = torrents
     }
 
+    func perform(_ action: TorrentAction, ids: [Int]) async throws {}
+
     func sessionInfo() async throws -> TransmissionSession {
         if hold == .session {
             return try await withCheckedThrowingContinuation { continuation in

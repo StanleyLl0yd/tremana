@@ -4,6 +4,7 @@ import Observation
 public protocol TransmissionRPCProviding: Sendable {
     func sessionInfo() async throws -> TransmissionSession
     func torrents() async throws -> [TransmissionTorrent]
+    func perform(_ action: TorrentAction, ids: [Int]) async throws
 }
 
 extension TransmissionRPCClient: TransmissionRPCProviding {}
@@ -15,6 +16,7 @@ public final class TreManaModel {
     public var username = ""
     public var password = ""
     public var allowsInsecureHTTP = false
+    public var selectedTorrentIDs: Set<Int> = []
 
     public private(set) var isBusy = false
     public private(set) var errorMessage: String?
@@ -74,6 +76,7 @@ public final class TreManaModel {
             server = info
             client = newClient
             torrents = loaded
+            selectedTorrentIDs = []
             password = ""
         } catch {
             guard connectionGeneration == generation else { return }
@@ -95,6 +98,37 @@ public final class TreManaModel {
             let loaded = try await client.torrents()
             guard connectionGeneration == generation else { return }
             torrents = loaded
+            selectedTorrentIDs.formIntersection(Set(loaded.map(\.id)))
+            errorMessage = nil
+        } catch {
+            guard connectionGeneration == generation else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func perform(_ action: TorrentAction) async {
+        guard let client, !isBusy else { return }
+        let availableIDs = Set(torrents.map(\.id))
+        let ids = selectedTorrentIDs.intersection(availableIDs).sorted()
+        guard !ids.isEmpty else { return }
+
+        let generation = connectionGeneration
+        isBusy = true
+        defer {
+            if connectionGeneration == generation {
+                isBusy = false
+            }
+        }
+
+        do {
+            try await client.perform(action, ids: ids)
+            guard connectionGeneration == generation else { return }
+
+            let loaded = try await client.torrents()
+            guard connectionGeneration == generation else { return }
+
+            torrents = loaded
+            selectedTorrentIDs.formIntersection(Set(loaded.map(\.id)))
             errorMessage = nil
         } catch {
             guard connectionGeneration == generation else { return }
@@ -108,6 +142,7 @@ public final class TreManaModel {
         client = nil
         server = nil
         torrents = []
+        selectedTorrentIDs = []
         errorMessage = nil
         password = ""
         isBusy = false

@@ -107,6 +107,49 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test(arguments: TorrentAction.allCases)
+    func actionsOnlyTargetExplicitTorrentIDs(_ action: TorrentAction) async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success"}"#)
+        ])
+        let client = try makeClient()
+
+        try await client.perform(action, ids: [9, 1, 9])
+
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == action.rawValue)
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["ids"] as? [Int] == [1, 9])
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func emptyOrInvalidIDsNeverReachTheServer() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for ids in [[], [0], [-1], [1, 0]] {
+            do {
+                try await client.perform(.stop, ids: ids)
+                Issue.record("Expected refusal for ids: \(ids)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
+    @Test func actionServerErrorsAreNotSwallowed() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"torrent not found"}"#)
+        ])
+        let client = try makeClient()
+        do {
+            try await client.perform(.start, ids: [11])
+            Issue.record("Expected RPC failure")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .serverError("torrent not found"))
+        }
+    }
+
     private func makeClient() throws -> TransmissionRPCClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
@@ -134,18 +177,21 @@ private final class ResponseQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var pending: [MockResponse] = []
     private var seenIDs: [String?] = []
+    private var requestBodies: [Data] = []
 
     func replace(_ responses: [MockResponse]) {
         lock.lock()
         defer { lock.unlock() }
         pending = responses
         seenIDs = []
+        requestBodies = []
     }
 
     func next(request: URLRequest) -> MockResponse {
         lock.lock()
         defer { lock.unlock() }
         seenIDs.append(request.value(forHTTPHeaderField: "X-Transmission-Session-Id"))
+        if let data = request.httpBody { requestBodies.append(data) }
         if pending.isEmpty { return MockResponse(status: 500) }
         return pending.removeFirst()
     }
@@ -154,6 +200,14 @@ private final class ResponseQueue: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return seenIDs
+    }
+
+    var lastRequest: [String: Any]? {
+        lock.lock()
+        let last = requestBodies.last
+        lock.unlock()
+        guard let last else { return nil }
+        return try? JSONSerialization.jsonObject(with: last) as? [String: Any]
     }
 
     var requestCount: Int {
