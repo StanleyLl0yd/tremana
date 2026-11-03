@@ -113,6 +113,19 @@ struct ContentView: View {
                 await model.refresh()
             }
         }
+        .task(id: refreshLoopIdentity) {
+            guard model.isConnected, autoRefreshEnabled else { return }
+            await model.refreshSwarm()
+            while !Task.isCancelled && model.isConnected {
+                do {
+                    try await Task.sleep(for: .seconds(60))
+                } catch {
+                    break
+                }
+                guard !Task.isCancelled, model.isConnected else { break }
+                await model.refreshSwarm()
+            }
+        }
         .onChange(of: isWindowForeground) { wasForeground, isForeground in
             if !wasForeground && isForeground,
                model.isConnected && autoRefreshEnabled {
@@ -292,6 +305,8 @@ private struct TorrentTableView: View {
     let filter: TorrentFilter
     @State private var inspectorExpanded = false
     @State private var inspectorTab: InspectorTab = .overview
+    @SceneStorage("com.sl.tremana.table-columns.v1")
+    private var columnCustomization: TableColumnCustomization<TransmissionTorrent>
 
     private var filteredTorrents: [TransmissionTorrent] {
         switch filter {
@@ -339,19 +354,21 @@ private struct TorrentTableView: View {
                     .frame(maxHeight: .infinity)
             } else {
                 VSplitView {
-                    Table(filteredTorrents, selection: $observedModel.selectedTorrentIDs) {
-                        TableColumn("Name", value: \.name)
-                        TableColumn("Progress") { torrent in
-                            TorrentProgressCell(progress: torrent.percentDone)
-                        }
-                        TableColumn("Status") { torrent in
-                            TorrentStatusCell(status: torrent.status)
-                        }
-                        TableColumn("Download") { torrent in
-                            TransferRateCell(bytesPerSecond: torrent.rateDownload)
-                        }
-                        TableColumn("Upload") { torrent in
-                            TransferRateCell(bytesPerSecond: torrent.rateUpload)
+                    Table(
+                        filteredTorrents,
+                        selection: $observedModel.selectedTorrentIDs,
+                        columnCustomization: $columnCustomization
+                    ) {
+                        TableColumnForEach(TorrentColumn.allCases) { column in
+                            TableColumn(LocalizedStringKey(column.title)) { torrent in
+                                TorrentColumnCell(
+                                    column: column,
+                                    torrent: torrent,
+                                    swarm: model.swarmCounts[torrent.id]
+                                )
+                            }
+                            .customizationID(column.rawValue)
+                            .defaultVisibility(column.visibleByDefault ? .visible : .hidden)
                         }
                     }
                     .accessibilityLabel("Transmission torrents")
