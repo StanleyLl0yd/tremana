@@ -118,7 +118,8 @@ public actor UserDefaultsProfileStore: ConnectionProfileStoring {
             guard let previous,
                   previous.rpcURL == profile.rpcURL,
                   previous.username == profile.username,
-                  previous.allowsInsecureHTTP == profile.allowsInsecureHTTP else {
+                  previous.allowsInsecureHTTP == profile.allowsInsecureHTTP,
+                  try await passwords.read(for: profile.id) != nil else {
                 throw ProfileStorageError.passwordRequired
             }
         }
