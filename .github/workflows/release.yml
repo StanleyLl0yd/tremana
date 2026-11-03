@@ -1,0 +1,132 @@
+name: Publish GitHub Release
+
+on:
+  push:
+    branches: [main]
+    paths: [release/VERSION]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tremana-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: xcode-27
+    timeout-minutes: 40
+    steps:
+      - name: Checkout protected main
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate release version and ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "Releases must originate on main" >&2
+            exit 1
+          }
+          version="$(tr -d '[:space:]' < release/VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Invalid semantic release version" >&2
+            exit 1
+          }
+          plist_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
+          [[ "$version" == "$plist_version" ]] || {
+            echo "Release version and bundle version differ" >&2
+            exit 1
+          }
+          test -s "docs/releases/v$version.md"
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
+
+      - name: Select Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_27.2.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_27.2.app/Contents/Developer
+          elif [[ -d /Applications/Xcode_27.1.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app/Contents/Developer
+          else
+            echo "Required Xcode 27 toolchain unavailable" >&2
+            exit 1
+          fi
+          xcodebuild -version
+          swift --version
+
+      - name: Compile and test exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift package dump-package >/dev/null
+          swift test --parallel
+
+      - name: Package exact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/package-app.sh
+          app="dist/TreMana.app"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" | grep -Fx 'com.sl.tremana'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" | grep -Fx "$RELEASE_VERSION"
+          /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist" | grep -Fx '27.0'
+          codesign --verify --strict "$app"
+          test -x "$app/Contents/MacOS/TreMana"
+          archs="$(lipo -archs "$app/Contents/MacOS/TreMana")"
+          [[ "$archs" == "arm64" ]] || {
+            echo "Expected arm64 binary, found: $archs" >&2
+            exit 1
+          }
+          asset="TreMana-v$RELEASE_VERSION-macOS27-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "dist/$asset"
+          (
+            cd dist
+            shasum -a 256 "$asset" > "$asset.sha256"
+          )
+          echo "ASSET_PATH=dist/$asset" >> "$GITHUB_ENV"
+          echo "CHECKSUM_PATH=dist/$asset.sha256" >> "$GITHUB_ENV"
+
+      - name: Create tag and publish release for tested SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; refusing overwrite" >&2
+            exit 1
+          fi
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "$existing" && "$existing" != "$GITHUB_SHA" ]]; then
+            echo "Tag points to another commit" >&2
+            exit 1
+          fi
+          if [[ -z "$existing" ]]; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" >/dev/null
+          fi
+          gh release create "$RELEASE_TAG" "$ASSET_PATH" "$CHECKSUM_PATH" \
+            --verify-tag --title "TreMana $RELEASE_VERSION" \
+            --notes-file "docs/releases/$RELEASE_TAG.md" --latest
+
+      - name: Verify published ZIP bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease,assets \
+            --jq '{tag: .tagName, draft: .isDraft, prerelease: .isPrerelease, assets: [.assets[].name]}'
+          mkdir -p "$RUNNER_TEMP/tremana-release-verify"
+          gh release download "$RELEASE_TAG" \
+            --pattern "$(basename "$ASSET_PATH")" \
+            --dir "$RUNNER_TEMP/tremana-release-verify"
+          cmp "$ASSET_PATH" "$RUNNER_TEMP/tremana-release-verify/$(basename "$ASSET_PATH")"
+          printf 'Direct ZIP: https://github.com/%s/releases/download/%s/%s\n' \
+            "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$(basename "$ASSET_PATH")" >> "$GITHUB_STEP_SUMMARY"

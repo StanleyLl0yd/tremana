@@ -9,27 +9,29 @@ the Transmission RPC API.
 Designed for macOS 27 and later, with a focus on
 native integration, performance, and usability.
 
-## Project status
+## Release
 
-Early development. Features below describe the
-planned application, not currently shipped functionality.
+**Latest version: 0.1.0**
 
-## Planned features
+[Download TreMana 0.1.0 ZIP directly](https://github.com/StanleyLl0yd/tremana/releases/download/v0.1.0/TreMana-v0.1.0-macOS27-arm64.zip)
 
-- Native macOS interface using SwiftUI and AppKit
-- Support for Transmission RPC servers
-- Connection profiles and secure authentication
-- Add torrents using magnet links or .torrent files
-- Monitor downloads, uploads, peers and trackers
-- Start, stop, remove and manage torrents
-- Individual file selection
-- File download ordering
-- Sequential piece downloading where supported
-- Independent per-torrent download mode settings
-- Transfer speed limits and server settings
-- Search, sorting and configurable table columns
-- macOS notifications
-- Finder integration for accessible network shares
+macOS 27+ and Apple Silicon. The published app is ad-hoc signed, not Apple
+Developer ID signed or notarized. On first launch macOS may require approval
+in System Settings > Privacy & Security. Do not disable Gatekeeper globally.
+
+### Available in 0.1.0
+- Transmission RPC 16, connection profiles and secure Keychain credentials
+- Native torrent list, customizable table columns and automatic refresh
+- Torrent Details, Files (view only), Trackers, Peers and Web Seeds
+- Magnet / .torrent add, Start, Pause, Verify, Reannounce, Copy Magnet, and guarded removal
+
+### Planned, not yet shipped
+- Interactive selection of files to download (#23)
+- Remote Move and Rename (#27)
+- Strict autonomous file queue, other advanced server controls
+
+Read [release notes](docs/releases/v0.1.0.md) and the
+[versioning policy](docs/VERSIONING.md).
 
 ## Download modes
 
