@@ -298,11 +298,20 @@ private struct AddTorrentSheet: View {
                         url.stopAccessingSecurityScopedResource()
                     }
                 }
-                let data = try Data(contentsOf: url)
-                guard !data.isEmpty, data.count <= 16 * 1024 * 1024 else {
+                let limit = 16 * 1024 * 1024
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+                guard url.pathExtension.lowercased() == "torrent",
+                      let size, size > 0, size <= limit else {
                     selectedFileName = nil
                     selectedFileData = nil
-                    fileError = "Select a .torrent file smaller than 16 MiB."
+                    fileError = "Select a .torrent file between 1 byte and 16 MiB."
+                    return
+                }
+                let data = try Data(contentsOf: url)
+                guard !data.isEmpty, data.count <= limit else {
+                    selectedFileName = nil
+                    selectedFileData = nil
+                    fileError = "Select a .torrent file between 1 byte and 16 MiB."
                     return
                 }
                 selectedFileName = url.lastPathComponent
