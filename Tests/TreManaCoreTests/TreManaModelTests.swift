@@ -370,6 +370,84 @@ struct TreManaModelTests {
         #expect(model.selectedTorrentIDs.isEmpty)
     }
 
+    @Test @MainActor func fileWantedToggleConfirmsServerAndPreservesLastFile() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)], wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        await model.setFileWanted(
+            torrentID: 1, fileIndex: 1, wanted: false, expectedWanted: true
+        )
+        #expect(await remote.fileSelectionCalls().count == 1)
+        #expect(model.selectedTorrentDetail?.fileStats?[1].wanted == false)
+        #expect(model.noticeMessage == "File selection updated")
+        #expect(!model.isBusy)
+
+        await model.setFileWanted(
+            torrentID: 1, fileIndex: 0, wanted: false, expectedWanted: true
+        )
+        #expect(await remote.fileSelectionCalls().count == 1)
+        #expect(model.selectedTorrentDetail?.fileStats?[0].wanted == true)
+        #expect(model.errorMessage == TransmissionRPCError.lastWantedFile.localizedDescription)
+    }
+
+    @Test @MainActor func fileToggleRefusesInvalidOrStaleInspectorSelection() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1), fixtureTorrent(2)],
+            wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        await model.setFileWanted(
+            torrentID: 1, fileIndex: 9, wanted: false, expectedWanted: true
+        )
+        await model.setFileWanted(
+            torrentID: 2, fileIndex: 0, wanted: false, expectedWanted: true
+        )
+        await model.setFileWanted(
+            torrentID: 1, fileIndex: 0, wanted: true, expectedWanted: true
+        )
+        #expect(await remote.fileSelectionCalls().isEmpty)
+
+        // Another Transmission client changed the server since last refresh.
+        await remote.replaceWantedStates([false, true])
+        await model.setFileWanted(
+            torrentID: 1, fileIndex: 0, wanted: false, expectedWanted: true
+        )
+        #expect(await remote.fileSelectionCalls().isEmpty)
+        #expect(model.selectedTorrentDetail?.fileStats?[0].wanted == false)
+        #expect(model.errorMessage == TransmissionRPCError.fileSelectionChanged.localizedDescription)
+    }
+
+    @Test @MainActor func failedFileRPCDoesNotOptimisticallyChangeCheckbox() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)],
+            wantedStates: [true, true], rejectFileChanges: true
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        await model.setFileWanted(
+            torrentID: 1, fileIndex: 1, wanted: false, expectedWanted: true
+        )
+        #expect(await remote.fileSelectionCalls().count == 1)
+        #expect(model.selectedTorrentDetail?.fileStats?[1].wanted == true)
+        #expect(model.errorMessage == TransmissionRPCError.serverError("read only").localizedDescription)
+        #expect(!model.isBusy)
+    }
+
     @Test @MainActor func staleNetworkErrorDoesNotAppearAfterDisconnect() async {
         let remote = ControlledRPC(hold: .session, torrents: [])
         let model = TreManaModel(makeClient: { _ in remote })
@@ -405,6 +483,9 @@ private actor ControlledRPC: TransmissionRPCProviding {
 
     let hold: Hold
     let contents: [TransmissionTorrent]
+    private var wantedStates: [Bool]?
+    private let rejectFileChanges: Bool
+    private var changedFiles: [(torrentID: Int, fileIndex: Int, wanted: Bool)] = []
     private var torrentCalls = 0
     private var recordedActions: [(method: String, ids: [Int])] = []
     private var actionContinuation: CheckedContinuation<Void, Error>?
@@ -413,9 +494,36 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private var torrentContinuation: CheckedContinuation<[TransmissionTorrent], Error>?
     private var startedContinuation: CheckedContinuation<Void, Never>?
 
-    init(hold: Hold, torrents: [TransmissionTorrent]) {
+    init(
+        hold: Hold,
+        torrents: [TransmissionTorrent],
+        wantedStates: [Bool]? = nil,
+        rejectFileChanges: Bool = false
+    ) {
         self.hold = hold
         self.contents = torrents
+        self.wantedStates = wantedStates
+        self.rejectFileChanges = rejectFileChanges
+    }
+
+    func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws {
+        changedFiles.append((torrentID, fileIndex, wanted))
+        if rejectFileChanges {
+            throw TransmissionRPCError.serverError("read only")
+        }
+        guard var states = wantedStates, states.indices.contains(fileIndex) else {
+            throw TransmissionRPCError.invalidFileSelection
+        }
+        states[fileIndex] = wanted
+        wantedStates = states
+    }
+
+    func fileSelectionCalls() -> [(torrentID: Int, fileIndex: Int, wanted: Bool)] {
+        changedFiles
+    }
+
+    func replaceWantedStates(_ updated: [Bool]) {
+        wantedStates = updated
     }
 
     func addTorrent(
@@ -440,7 +548,23 @@ private actor ControlledRPC: TransmissionRPCProviding {
     }
 
     private func detailFixture(_ id: Int) throws -> TransmissionTorrentDetail {
-        try JSONDecoder().decode(
+        if let wantedStates {
+            let files: [[String: Any]] = wantedStates.indices.map { index in
+                ["name": "file_\(index)", "length": 1, "bytesCompleted": 0]
+            }
+            let stats: [[String: Any]] = wantedStates.map { wanted in
+                ["wanted": wanted, "priority": 0, "bytesCompleted": 0]
+            }
+            let payload: [String: Any] = [
+                "id": id, "name": "Torrent \(id)", "status": 4,
+                "files": files, "fileStats": stats
+            ]
+            return try JSONDecoder().decode(
+                TransmissionTorrentDetail.self,
+                from: JSONSerialization.data(withJSONObject: payload)
+            )
+        }
+        return try JSONDecoder().decode(
             TransmissionTorrentDetail.self,
             from: Data("{\"id\":\(id),\"name\":\"Torrent \(id)\",\"status\":4}".utf8)
         )
