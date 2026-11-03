@@ -32,7 +32,7 @@ struct TorrentInspectorView: View {
                     .foregroundStyle(.secondary)
                 Picker("Torrent details", selection: $selectedTab) {
                     ForEach(InspectorTab.allCases) { tab in
-                        Text(tab.rawValue).tag(tab)
+                        Text(LocalizedStringKey(tab.rawValue)).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -47,8 +47,8 @@ struct TorrentInspectorView: View {
                         : "arrow.up.left.and.arrow.down.right")
                 }
                 .buttonStyle(.borderless)
-                .help(isExpanded ? "Restore split view" : "Expand details")
-                .accessibilityLabel(isExpanded ? "Restore torrent list" : "Expand torrent details")
+                .help(LocalizedStringKey(isExpanded ? "Restore split view" : "Expand details"))
+                .accessibilityLabel(LocalizedStringKey(isExpanded ? "Restore torrent list" : "Expand torrent details"))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -57,9 +57,9 @@ struct TorrentInspectorView: View {
             Group {
                 if selectedID == nil {
                     ContentUnavailableView(
-                        model.selectedTorrentIDs.isEmpty
+                        LocalizedStringKey(model.selectedTorrentIDs.isEmpty
                             ? "Select a torrent to view details"
-                            : "Select a single torrent",
+                            : "Select a single torrent"),
                         systemImage: "square.split.2x1"
                     )
                 } else if let detail = model.selectedTorrentDetail,
@@ -199,7 +199,7 @@ struct TorrentInspectorView: View {
                             Text("/ " + size(file.length))
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
-                            Text(wanted.map { $0 ? "Wanted" : "Skipped" } ?? "Unknown")
+                            Text(LocalizedStringKey(wanted.map { $0 ? "Wanted" : "Skipped" } ?? "Unknown"))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 64, alignment: .trailing)
                         }
@@ -240,7 +240,7 @@ struct TorrentInspectorView: View {
                                 Text("Peers \(stat.lastAnnouncePeerCount.map(String.init) ?? "—")")
                             }
                             HStack(spacing: 10) {
-                                Label(announceStatus(stat), systemImage: announceIcon(stat))
+                                Label(LocalizedStringKey(announceStatus(stat)), systemImage: announceIcon(stat))
                                     .foregroundStyle(stat.lastAnnounceSucceeded == false
                                         ? Color.orange : Color.secondary)
                                 Text("Last \(date(stat.lastAnnounceTime))")
@@ -375,7 +375,7 @@ struct TorrentInspectorView: View {
     }
 
     private func placeholder(_ message: String, symbol: String) -> some View {
-        ContentUnavailableView(message, systemImage: symbol)
+        ContentUnavailableView(LocalizedStringKey(message), systemImage: symbol)
     }
 
     private func size(_ bytes: Int64?) -> String {
@@ -428,7 +428,7 @@ private struct InfoLine: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .foregroundStyle(.secondary)
                 .frame(width: 112, alignment: .trailing)
             Text(value)
