@@ -55,6 +55,50 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
     public let queuePosition: Int?
     public let errorString: String
 
+    public init(
+        id: Int,
+        name: String,
+        status: Int,
+        percentDone: Double,
+        rateDownload: Int64,
+        rateUpload: Int64,
+        sizeWhenDone: Int64,
+        eta: Int,
+        errorString: String,
+        addedDate: Int? = nil,
+        doneDate: Int? = nil,
+        uploadRatio: Double? = nil,
+        uploadedEver: Int64? = nil,
+        downloadedEver: Int64? = nil,
+        totalSize: Int64? = nil,
+        leftUntilDone: Int64? = nil,
+        peersConnected: Int? = nil,
+        peersSendingToUs: Int? = nil,
+        peersGettingFromUs: Int? = nil,
+        queuePosition: Int? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.percentDone = percentDone
+        self.rateDownload = rateDownload
+        self.rateUpload = rateUpload
+        self.sizeWhenDone = sizeWhenDone
+        self.eta = eta
+        self.errorString = errorString
+        self.addedDate = addedDate
+        self.doneDate = doneDate
+        self.uploadRatio = uploadRatio
+        self.uploadedEver = uploadedEver
+        self.downloadedEver = downloadedEver
+        self.totalSize = totalSize
+        self.leftUntilDone = leftUntilDone
+        self.peersConnected = peersConnected
+        self.peersSendingToUs = peersSendingToUs
+        self.peersGettingFromUs = peersGettingFromUs
+        self.queuePosition = queuePosition
+    }
+
     public var statusDescription: String {
         switch status {
         case 0: "Stopped"
