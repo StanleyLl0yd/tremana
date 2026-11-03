@@ -107,6 +107,56 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test func detailsRequestUsesOnlyOneExplicitTorrentID() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":9,"name":"Sample","status":4,"percentDone":0.6,"downloadDir":"/media/torrents","files":[{"name":"video.mkv","length":1024,"bytesCompleted":512}],"fileStats":[{"wanted":true,"priority":0,"bytesCompleted":512}],"peers":[{"address":"192.0.2.1","port":51413,"clientName":"Client","progress":0.5,"rateToClient":4096,"rateToPeer":0}],"trackerStats":[{"host":"tracker.example","announce":"https://tracker.example/announce"}],"webseeds":["https://cdn.example/file"]}]}}"#)
+        ])
+        let client = try makeClient()
+        let result = try #require(try await client.torrentDetails(id: 9))
+        #expect(result.id == 9)
+        #expect(result.files?.first?.name == "video.mkv")
+        #expect(result.fileStats?.first?.wanted == true)
+        #expect(result.peers?.first?.rateToClient == 4096)
+        #expect(result.trackerStats?.first?.host == "tracker.example")
+        #expect(result.webseeds == ["https://cdn.example/file"])
+
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-get")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["ids"] as? [Int] == [9])
+        let fields = try #require(arguments["fields"] as? [String])
+        #expect(fields.contains("fileStats"))
+        #expect(fields.contains("trackerStats"))
+        #expect(fields.contains("peers"))
+        #expect(fields.contains("webseeds"))
+    }
+
+    @Test func detailsRejectInvalidIDBeforeAnyNetworkRequest() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for id in [-1, 0] {
+            do {
+                _ = try await client.torrentDetails(id: id)
+                Issue.record("Expected invalid selected torrent ID")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
+    @Test func detailsReturnNilForMissingIDWithoutFetchingAll() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrents":[]}}"#)
+        ])
+        let client = try makeClient()
+        #expect(try await client.torrentDetails(id: 42) == nil)
+        let arguments = try #require(
+            MockURLProtocol.responses.lastRequest?["arguments"] as? [String: Any]
+        )
+        #expect(arguments["ids"] as? [Int] == [42])
+    }
+
     @Test(arguments: TorrentAction.allCases)
     func actionsOnlyTargetExplicitTorrentIDs(_ action: TorrentAction) async throws {
         MockURLProtocol.responses.replace([

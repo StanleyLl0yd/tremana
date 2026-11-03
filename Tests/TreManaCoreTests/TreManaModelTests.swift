@@ -237,6 +237,49 @@ struct TreManaModelTests {
         #expect(!model.isBusy)
     }
 
+    @Test @MainActor func switchingSelectionRejectsLateInspectorData() async throws {
+        let remote = ControlledRPC(
+            hold: .detail,
+            torrents: [fixtureTorrent(1), fixtureTorrent(2)]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+
+        model.selectedTorrentIDs = [1]
+        let original = Task { await model.loadSelectedTorrentDetails() }
+        await remote.waitForHeldCall()
+
+        model.selectedTorrentIDs = [2]
+        await model.loadSelectedTorrentDetails()
+        #expect(model.selectedTorrentDetail?.id == 2)
+        await remote.resumeHeldCall()
+        await original.value
+        #expect(model.selectedTorrentDetail?.id == 2)
+        #expect(model.detailErrorMessage == nil)
+
+        model.selectedTorrentIDs = []
+        await model.loadSelectedTorrentDetails()
+        #expect(model.selectedTorrentDetail == nil)
+    }
+
+    @Test @MainActor func disconnectRejectsPendingInspectorResponse() async {
+        let remote = ControlledRPC(hold: .detail, torrents: [fixtureTorrent(1)])
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+
+        let original = Task { await model.loadSelectedTorrentDetails() }
+        await remote.waitForHeldCall()
+        model.disconnect()
+        await remote.resumeHeldCall()
+        await original.value
+        #expect(!model.isConnected)
+        #expect(!model.isLoadingDetail)
+        #expect(model.selectedTorrentDetail == nil)
+    }
+
     @Test @MainActor func pauseIsNeverDroppedDuringBackgroundPolling() async {
         let remote = ControlledRPC(hold: .refresh, torrents: [fixtureTorrent(1)])
         let model = TreManaModel(makeClient: { _ in remote })
@@ -340,6 +383,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         case initialTorrents
         case refresh
         case action
+        case detail
     }
 
     let hold: Hold
@@ -347,6 +391,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private var torrentCalls = 0
     private var recordedActions: [(method: String, ids: [Int])] = []
     private var actionContinuation: CheckedContinuation<Void, Error>?
+    private var detailContinuation: CheckedContinuation<TransmissionTorrentDetail?, Never>?
     private var sessionContinuation: CheckedContinuation<TransmissionSession, Error>?
     private var torrentContinuation: CheckedContinuation<[TransmissionTorrent], Error>?
     private var startedContinuation: CheckedContinuation<Void, Never>?
@@ -365,6 +410,25 @@ private actor ControlledRPC: TransmissionRPCProviding {
             hashString: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ))
     }
+
+    func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail? {
+        if hold == .detail && id == 1 {
+            return await withCheckedContinuation { continuation in
+                detailContinuation = continuation
+                startedContinuation?.resume()
+                startedContinuation = nil
+            }
+        }
+        return try detailFixture(id)
+    }
+
+    private func detailFixture(_ id: Int) throws -> TransmissionTorrentDetail {
+        try JSONDecoder().decode(
+            TransmissionTorrentDetail.self,
+            from: Data("{\"id\":\(id),\"name\":\"Torrent \(id)\",\"status\":4}".utf8)
+        )
+    }
+
 
     func perform(_ action: TorrentAction, ids: [Int]) async throws {
         recordedActions.append((method: action.rawValue, ids: ids))
@@ -409,7 +473,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
 
     func waitForHeldCall() async {
         guard sessionContinuation == nil, torrentContinuation == nil,
-              actionContinuation == nil else {
+              actionContinuation == nil, detailContinuation == nil else {
             return
         }
         await withCheckedContinuation { continuation in
@@ -426,6 +490,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         torrentContinuation = nil
         actionContinuation?.resume()
         actionContinuation = nil
+        detailContinuation?.resume(returning: try? detailFixture(1))
+        detailContinuation = nil
     }
 
     func failHeldCall() {
@@ -435,6 +501,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         torrentContinuation = nil
         actionContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
         actionContinuation = nil
+        detailContinuation?.resume(returning: nil)
+        detailContinuation = nil
     }
 }
 

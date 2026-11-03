@@ -123,6 +123,30 @@ public actor TransmissionRPCClient {
         return response.torrents
     }
 
+    public func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail? {
+        // Legacy Transmission treats omitted/empty IDs as ALL torrents.
+        guard id > 0 else { throw TransmissionRPCError.invalidTorrentSelection }
+        let fields = [
+            "id", "name", "status", "percentDone", "totalSize", "sizeWhenDone",
+            "downloadedEver", "uploadedEver", "leftUntilDone", "uploadRatio",
+            "rateDownload", "rateUpload", "eta", "downloadDir", "hashString",
+            "comment", "creator", "dateCreated", "addedDate", "doneDate",
+            "activityDate", "secondsDownloading", "secondsSeeding",
+            "peersConnected", "peersSendingToUs", "peersGettingFromUs",
+            "files", "fileStats", "trackers", "trackerStats", "peers",
+            "webseeds", "downloadLimit", "uploadLimit", "downloadLimited",
+            "uploadLimited", "honorsSessionLimits", "errorString"
+        ]
+        let response: TransmissionTorrentDetailList = try await call(
+            "torrent-get",
+            arguments: [
+                "ids": .array([.integer(id)]),
+                "fields": .array(fields.map { .string($0) })
+            ]
+        )
+        return response.torrents.first(where: { $0.id == id })
+    }
+
     public func perform(_ action: TorrentAction, ids: [Int]) async throws {
         // Legacy Transmission interprets missing or empty ids as ALL torrents.
         guard !ids.isEmpty, ids.allSatisfy({ $0 > 0 }) else {

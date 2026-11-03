@@ -58,6 +58,7 @@ struct TorrentProgressCell: View {
 }
 
 struct TorrentStatusCell: View {
+    @Environment(\.backgroundProminence) private var backgroundProminence
     let status: Int
 
     private var iconName: String {
@@ -85,7 +86,11 @@ struct TorrentStatusCell: View {
     var body: some View {
         Label(label, systemImage: iconName)
             .font(.subheadline)
-            .foregroundStyle(.primary)
+            .foregroundStyle(
+                backgroundProminence == .increased
+                    ? AnyShapeStyle(Color.white)
+                    : AnyShapeStyle(Color.primary)
+            )
             .lineLimit(1)
     }
 }
