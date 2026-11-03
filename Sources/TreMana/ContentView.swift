@@ -1,21 +1,31 @@
 import SwiftUI
 import TreManaCore
 
+private enum TorrentFilter: Hashable {
+    case all
+    case downloading
+    case seeding
+}
+
 struct ContentView: View {
     @Environment(TreManaModel.self) private var model
+    @State private var filter: TorrentFilter? = .all
 
     var body: some View {
         NavigationSplitView {
-            List {
+            List(selection: $filter) {
                 Label("All Torrents", systemImage: "tray.full")
+                    .tag(TorrentFilter.all)
                 Label("Downloading", systemImage: "arrow.down.circle")
+                    .tag(TorrentFilter.downloading)
                 Label("Seeding", systemImage: "arrow.up.circle")
+                    .tag(TorrentFilter.seeding)
             }
             .navigationTitle("TreMana")
             .listStyle(.sidebar)
         } detail: {
             if model.isConnected {
-                TorrentTableView()
+                TorrentTableView(filter: filter ?? .all)
             } else {
                 ConnectionView()
             }
@@ -74,6 +84,15 @@ private struct ConnectionView: View {
 
 private struct TorrentTableView: View {
     @Environment(TreManaModel.self) private var model
+    let filter: TorrentFilter
+
+    private var filteredTorrents: [TransmissionTorrent] {
+        switch filter {
+        case .all: model.torrents
+        case .downloading: model.torrents.filter { $0.status == 4 }
+        case .seeding: model.torrents.filter { $0.status == 6 }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -87,7 +106,7 @@ private struct TorrentTableView: View {
                 .foregroundStyle(.secondary)
                 .padding(12)
             }
-            Table(model.torrents) {
+            Table(filteredTorrents) {
                 TableColumn("Name", value: \.name)
                 TableColumn("Progress") { torrent in
                     Text(torrent.percentDone, format: .percent.precision(.fractionLength(1)))

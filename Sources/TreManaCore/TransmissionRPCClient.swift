@@ -67,6 +67,20 @@ public struct TransmissionConnection: Sendable {
     }
 }
 
+private final class RejectRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = RejectRedirects()
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
 public actor TransmissionRPCClient {
     private let connection: TransmissionConnection
     private let session: URLSession
@@ -122,7 +136,9 @@ public actor TransmissionRPCClient {
                 request.setValue("Basic \(encoded)", forHTTPHeaderField: "Authorization")
             }
 
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(
+                for: request, delegate: RejectRedirects.shared
+            )
             guard let response = response as? HTTPURLResponse else {
                 throw TransmissionRPCError.sessionHandshakeFailed
             }

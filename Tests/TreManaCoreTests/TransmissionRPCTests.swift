@@ -63,6 +63,37 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test func redirectIsNotAccepted() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(status: 302, headers: [
+                "Location": "https://other.example/transmission/rpc"
+            ])
+        ])
+        let client = try makeClient()
+        do {
+            _ = try await client.sessionInfo()
+            Issue.record("Expected redirect refusal")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .unexpectedStatus(302))
+        }
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func repeatedSessionChallengeFailsClosed() async throws {
+        let response = MockResponse(status: 409, headers: [
+            "X-Transmission-Session-Id": "never-accepted"
+        ])
+        MockURLProtocol.responses.replace([response, response, response])
+        let client = try makeClient()
+        do {
+            _ = try await client.sessionInfo()
+            Issue.record("Expected handshake failure")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .sessionHandshakeFailed)
+        }
+        #expect(MockURLProtocol.responses.requestCount == 3)
+    }
+
     @Test func serverErrorIsNotSwallowed() async throws {
         MockURLProtocol.responses.replace([
             MockResponse(body: #"{"result":"invalid argument","arguments":{}}"#)
