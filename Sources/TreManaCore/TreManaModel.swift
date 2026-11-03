@@ -4,9 +4,24 @@ import Observation
 public protocol TransmissionRPCProviding: Sendable {
     func sessionInfo() async throws -> TransmissionSession
     func torrents() async throws -> [TransmissionTorrent]
+    func torrentSwarm() async throws -> [Int: TorrentSwarmCounts]
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func perform(_ action: TorrentAction, ids: [Int]) async throws
+    func removeTorrents(ids: [Int], deleteLocalData: Bool) async throws
+    func magnetLink(id: Int) async throws -> String?
     func addTorrent(_ source: TorrentAddSource, startImmediately: Bool) async throws -> TorrentAddOutcome
+}
+
+extension TransmissionRPCProviding {
+    public func torrentSwarm() async throws -> [Int: TorrentSwarmCounts] { [:] }
+
+    public func removeTorrents(ids: [Int], deleteLocalData: Bool) async throws {
+        throw TransmissionRPCError.invalidTorrentSelection
+    }
+
+    public func magnetLink(id: Int) async throws -> String? {
+        throw TransmissionRPCError.invalidTorrentSelection
+    }
 }
 
 extension TransmissionRPCClient: TransmissionRPCProviding {}
@@ -33,6 +48,8 @@ public final class TreManaModel {
     public private(set) var savedProfiles: [ConnectionProfile] = []
     public private(set) var server: TransmissionSession?
     public private(set) var torrents: [TransmissionTorrent] = []
+    public private(set) var swarmCounts: [Int: TorrentSwarmCounts] = [:]
+    public private(set) var isRefreshingSwarm = false
     public private(set) var lastRefreshAt: Date?
     public private(set) var selectedTorrentDetail: TransmissionTorrentDetail?
     public private(set) var detailErrorMessage: String?
@@ -216,6 +233,7 @@ public final class TreManaModel {
             server = info
             client = newClient
             torrents = loaded
+            swarmCounts = [:]
             lastRefreshAt = .now
             detailGeneration &+= 1
             selectedTorrentDetail = nil
@@ -270,6 +288,22 @@ public final class TreManaModel {
         } catch {
             guard connectionGeneration == generation else { return }
             errorMessage = error.localizedDescription
+        }
+    }
+
+    public func refreshSwarm() async {
+        guard let client, !isRefreshingSwarm, !isBusy else { return }
+        let ticket = connectionGeneration
+        isRefreshingSwarm = true
+        defer {
+            if connectionGeneration == ticket { isRefreshingSwarm = false }
+        }
+        do {
+            let counts = try await client.torrentSwarm()
+            guard connectionGeneration == ticket else { return }
+            swarmCounts = counts
+        } catch {
+            // Supplementary tracker data must never interrupt torrent controls.
         }
     }
 
@@ -342,10 +376,22 @@ public final class TreManaModel {
     }
 
     public func perform(_ action: TorrentAction) async {
+        // Toolbar selection historically filters rows removed by a refresh.
+        // Context menu actions supply exact IDs and are validated strictly.
+        let existing = Set(torrents.map(\.id))
+        await perform(action, ids: selectedTorrentIDs.intersection(existing).sorted())
+    }
+
+    public func perform(_ action: TorrentAction, ids requested: [Int]) async {
         guard let client, !isBusy else { return }
-        let availableIDs = Set(torrents.map(\.id))
-        let ids = selectedTorrentIDs.intersection(availableIDs).sorted()
-        guard !ids.isEmpty else { return }
+        let available = Set(torrents.map(\.id))
+        guard !requested.isEmpty, requested.allSatisfy({
+            $0 > 0 && available.contains($0)
+        }) else {
+            errorMessage = TransmissionRPCError.invalidTorrentSelection.localizedDescription
+            return
+        }
+        let ids = Array(Set(requested)).sorted()
 
         mutationGeneration &+= 1
         let generation = connectionGeneration
@@ -371,6 +417,62 @@ public final class TreManaModel {
         } catch {
             guard connectionGeneration == generation else { return }
             errorMessage = error.localizedDescription
+        }
+    }
+
+    public func removeTorrents(ids requested: [Int], deleteLocalData: Bool) async {
+        guard let client, !isBusy else { return }
+        let available = Set(torrents.map(\.id))
+        guard !requested.isEmpty, requested.allSatisfy({
+            $0 > 0 && available.contains($0)
+        }) else {
+            errorMessage = TransmissionRPCError.invalidTorrentSelection.localizedDescription
+            return
+        }
+        let ids = Array(Set(requested)).sorted()
+        mutationGeneration &+= 1
+        let ticket = connectionGeneration
+        isBusy = true
+        defer {
+            if connectionGeneration == ticket { isBusy = false }
+        }
+
+        do {
+            try await client.removeTorrents(ids: ids, deleteLocalData: deleteLocalData)
+            guard connectionGeneration == ticket else { return }
+            let refreshed = try await client.torrents()
+            guard connectionGeneration == ticket else { return }
+            torrents = refreshed
+            selectedTorrentIDs.formIntersection(Set(refreshed.map(\.id)))
+            noticeMessage = deleteLocalData
+                ? "Removed torrent(s) and requested deletion of server data"
+                : "Removed torrent(s) from Transmission; files kept"
+            errorMessage = nil
+            await loadSelectedTorrentDetails()
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func magnetLink(for id: Int) async -> String? {
+        guard let client, id > 0, torrents.contains(where: { $0.id == id }) else {
+            errorMessage = TransmissionRPCError.invalidTorrentSelection.localizedDescription
+            return nil
+        }
+        let ticket = connectionGeneration
+        do {
+            let link = try await client.magnetLink(id: id)
+            guard connectionGeneration == ticket else { return nil }
+            guard let link, link.hasPrefix("magnet:?") else {
+                noticeMessage = "This torrent has no magnet link available"
+                return nil
+            }
+            return link
+        } catch {
+            guard connectionGeneration == ticket else { return nil }
+            errorMessage = error.localizedDescription
+            return nil
         }
     }
 
@@ -419,6 +521,8 @@ public final class TreManaModel {
         client = nil
         server = nil
         torrents = []
+        swarmCounts = [:]
+        isRefreshingSwarm = false
         lastRefreshAt = nil
         detailGeneration &+= 1
         selectedTorrentDetail = nil

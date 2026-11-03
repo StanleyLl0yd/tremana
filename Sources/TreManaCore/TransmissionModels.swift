@@ -42,7 +42,62 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
     public let rateUpload: Int64
     public let sizeWhenDone: Int64
     public let eta: Int
+    public let addedDate: Int?
+    public let doneDate: Int?
+    public let uploadRatio: Double?
+    public let uploadedEver: Int64?
+    public let downloadedEver: Int64?
+    public let totalSize: Int64?
+    public let leftUntilDone: Int64?
+    public let peersConnected: Int?
+    public let peersSendingToUs: Int?
+    public let peersGettingFromUs: Int?
+    public let queuePosition: Int?
     public let errorString: String
+
+    public init(
+        id: Int,
+        name: String,
+        status: Int,
+        percentDone: Double,
+        rateDownload: Int64,
+        rateUpload: Int64,
+        sizeWhenDone: Int64,
+        eta: Int,
+        errorString: String,
+        addedDate: Int? = nil,
+        doneDate: Int? = nil,
+        uploadRatio: Double? = nil,
+        uploadedEver: Int64? = nil,
+        downloadedEver: Int64? = nil,
+        totalSize: Int64? = nil,
+        leftUntilDone: Int64? = nil,
+        peersConnected: Int? = nil,
+        peersSendingToUs: Int? = nil,
+        peersGettingFromUs: Int? = nil,
+        queuePosition: Int? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.percentDone = percentDone
+        self.rateDownload = rateDownload
+        self.rateUpload = rateUpload
+        self.sizeWhenDone = sizeWhenDone
+        self.eta = eta
+        self.errorString = errorString
+        self.addedDate = addedDate
+        self.doneDate = doneDate
+        self.uploadRatio = uploadRatio
+        self.uploadedEver = uploadedEver
+        self.downloadedEver = downloadedEver
+        self.totalSize = totalSize
+        self.leftUntilDone = leftUntilDone
+        self.peersConnected = peersConnected
+        self.peersSendingToUs = peersSendingToUs
+        self.peersGettingFromUs = peersGettingFromUs
+        self.queuePosition = queuePosition
+    }
 
     public var statusDescription: String {
         switch status {
@@ -59,4 +114,42 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
 
 struct TorrentList: Decodable {
     let torrents: [TransmissionTorrent]
+}
+
+
+/// Tracker-reported swarm totals. Do not sum across trackers: duplicate peers.
+public struct TorrentSwarmCounts: Sendable, Equatable {
+    public let seeds: Int?
+    public let leeches: Int?
+
+    public init(seeds: Int?, leeches: Int?) {
+        self.seeds = seeds
+        self.leeches = leeches
+    }
+}
+
+struct TorrentSwarmList: Decodable {
+    let torrents: [TorrentSwarmRecord]
+}
+
+struct TorrentSwarmRecord: Decodable {
+    let id: Int
+    let trackerStats: [TorrentSwarmTracker]?
+
+    var counts: TorrentSwarmCounts {
+        let seeds = trackerStats?.compactMap { value -> Int? in
+            guard let count = value.seederCount, count >= 0 else { return nil }
+            return count
+        }.max()
+        let leeches = trackerStats?.compactMap { value -> Int? in
+            guard let count = value.leecherCount, count >= 0 else { return nil }
+            return count
+        }.max()
+        return TorrentSwarmCounts(seeds: seeds, leeches: leeches)
+    }
+}
+
+struct TorrentSwarmTracker: Decodable {
+    let seederCount: Int?
+    let leecherCount: Int?
 }

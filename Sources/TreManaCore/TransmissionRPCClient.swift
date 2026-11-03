@@ -114,13 +114,31 @@ public actor TransmissionRPCClient {
     public func torrents() async throws -> [TransmissionTorrent] {
         let fields = [
             "id", "name", "status", "percentDone", "rateDownload",
-            "rateUpload", "sizeWhenDone", "eta", "errorString"
+            "rateUpload", "sizeWhenDone", "eta", "errorString",
+            "addedDate", "doneDate", "uploadRatio", "uploadedEver",
+            "downloadedEver", "totalSize", "leftUntilDone", "peersConnected",
+            "peersSendingToUs", "peersGettingFromUs", "queuePosition"
         ]
         let response: TorrentList = try await call(
             "torrent-get",
             arguments: ["fields": .array(fields.map { .string($0) })]
         )
         return response.torrents
+    }
+
+    public func torrentSwarm() async throws -> [Int: TorrentSwarmCounts] {
+        // Tracker stats are much larger than scalar fields. Poll separately.
+        let response: TorrentSwarmList = try await call(
+            "torrent-get",
+            arguments: [
+                "fields": .array([.string("id"), .string("trackerStats")])
+            ]
+        )
+        var result: [Int: TorrentSwarmCounts] = [:]
+        for torrent in response.torrents where torrent.id > 0 {
+            result[torrent.id] = torrent.counts
+        }
+        return result
     }
 
     public func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail? {
@@ -155,6 +173,32 @@ public actor TransmissionRPCClient {
         let _: RPCReply<EmptyRPCArguments> = try await send(
             action.rawValue,
             arguments: ["ids": .array(ids.map { .integer($0) })]
+        )
+    }
+
+    public func magnetLink(id: Int) async throws -> String? {
+        guard id > 0 else { throw TransmissionRPCError.invalidTorrentSelection }
+        let reply: TorrentMagnetList = try await call(
+            "torrent-get",
+            arguments: [
+                "ids": .array([.integer(id)]),
+                "fields": .array([.string("id"), .string("magnetLink")])
+            ]
+        )
+        return reply.torrents.first(where: { $0.id == id })?.magnetLink
+    }
+
+    public func removeTorrents(ids: [Int], deleteLocalData: Bool) async throws {
+        guard !ids.isEmpty, ids.allSatisfy({ $0 > 0 }) else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        let unique = Array(Set(ids)).sorted()
+        let _: RPCReply<EmptyRPCArguments> = try await send(
+            "torrent-remove",
+            arguments: [
+                "ids": .array(unique.map { .integer($0) }),
+                "delete-local-data": .boolean(deleteLocalData)
+            ]
         )
     }
 
@@ -282,4 +326,14 @@ public actor TransmissionRPCClient {
 
         throw TransmissionRPCError.sessionHandshakeFailed
     }
+}
+
+
+private struct TorrentMagnetList: Decodable {
+    let torrents: [TorrentMagnetItem]
+}
+
+private struct TorrentMagnetItem: Decodable {
+    let id: Int
+    let magnetLink: String?
 }

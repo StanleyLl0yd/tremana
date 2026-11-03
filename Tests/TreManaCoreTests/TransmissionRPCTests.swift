@@ -107,6 +107,42 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test func scalarListFieldsAreRPC16Compatible() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":10,"name":"Example","status":4,"percentDone":0.5,"rateDownload":1024,"rateUpload":512,"sizeWhenDone":4096,"eta":60,"errorString":"","addedDate":1700000000,"uploadRatio":1.25,"uploadedEver":10000,"downloadedEver":8000,"totalSize":16384,"leftUntilDone":2048,"peersConnected":8,"peersSendingToUs":3,"peersGettingFromUs":2,"queuePosition":4}]}}"#)
+        ])
+        let client = try makeClient()
+        let torrent = try #require(try await client.torrents().first)
+        #expect(torrent.addedDate == 1700000000)
+        #expect(torrent.uploadRatio == 1.25)
+        #expect(torrent.peersConnected == 8)
+        #expect(torrent.queuePosition == 4)
+        let arguments = try #require(
+            MockURLProtocol.responses.lastRequest?["arguments"] as? [String: Any]
+        )
+        let fields = try #require(arguments["fields"] as? [String])
+        #expect(fields.contains("addedDate"))
+        #expect(fields.contains("uploadRatio"))
+        #expect(fields.contains("queuePosition"))
+        #expect(!fields.contains("trackerStats"))
+    }
+
+    @Test func swarmCountsAreTrackerMaximaNotSums() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":1,"trackerStats":[{"seederCount":9,"leecherCount":4},{"seederCount":12,"leecherCount":6},{"seederCount":-1,"leecherCount":-1}]},{"id":2,"trackerStats":[]},{"id":3}]}}"#)
+        ])
+        let client = try makeClient()
+        let counts = try await client.torrentSwarm()
+        #expect(counts[1] == TorrentSwarmCounts(seeds: 12, leeches: 6))
+        #expect(counts[2] == TorrentSwarmCounts(seeds: nil, leeches: nil))
+        #expect(counts[3] == TorrentSwarmCounts(seeds: nil, leeches: nil))
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-get")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["fields"] as? [String] == ["id", "trackerStats"])
+        #expect(arguments["ids"] == nil)
+    }
+
     @Test func detailsRequestUsesOnlyOneExplicitTorrentID() async throws {
         MockURLProtocol.responses.replace([
             MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":9,"name":"Sample","status":4,"percentDone":0.6,"downloadDir":"/media/torrents","files":[{"name":"video.mkv","length":1024,"bytesCompleted":512}],"fileStats":[{"wanted":true,"priority":0,"bytesCompleted":512}],"peers":[{"address":"192.0.2.1","port":51413,"clientName":"Client","progress":0.5,"rateToClient":4096,"rateToPeer":0}],"trackerStats":[{"host":"tracker.example","announce":"https://tracker.example/announce","tier":1,"seederCount":42,"leecherCount":18,"hasAnnounced":true,"lastAnnounceSucceeded":true,"lastAnnouncePeerCount":12,"lastAnnounceTime":1700000000,"nextAnnounceTime":1700001800,"lastScrapeResult":"Success","lastScrapeTime":1700000010}],"webseeds":["https://cdn.example/file"]}]}}"#)
@@ -207,6 +243,63 @@ struct TransmissionRPCTests {
         } catch let error as TransmissionRPCError {
             #expect(error == .serverError("torrent not found"))
         }
+    }
+
+    @Test(arguments: [false, true])
+    func removeUsesExplicitIDsAndDeletionFlag(_ deleteData: Bool) async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success"}"#)
+        ])
+        let client = try makeClient()
+        try await client.removeTorrents(ids: [8, 3, 8], deleteLocalData: deleteData)
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-remove")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["ids"] as? [Int] == [3, 8])
+        #expect(arguments["delete-local-data"] as? Bool == deleteData)
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func removeRejectsInvalidIDsWithoutContactingServer() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for invalid in [[], [0], [-1], [0, 10]] {
+            do {
+                try await client.removeTorrents(ids: invalid, deleteLocalData: true)
+                Issue.record("Expected rejection for \(invalid)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
+    @Test func magnetLinkIsFetchedForExactlyOneTorrent() async throws {
+        let magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrents":[{"id":7,"magnetLink":"magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"}]}}"#)
+        ])
+        let client = try makeClient()
+        #expect(try await client.magnetLink(id: 7) == magnet)
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-get")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["ids"] as? [Int] == [7])
+        #expect(arguments["fields"] as? [String] == ["id", "magnetLink"])
+    }
+
+    @Test func magnetLinkRejectsNonPositiveIDs() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for id in [-1, 0] {
+            do {
+                _ = try await client.magnetLink(id: id)
+                Issue.record("Expected refusal for \(id)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
     }
 
     @Test func magnetAddUsesLegacyRPC16Vocabulary() async throws {

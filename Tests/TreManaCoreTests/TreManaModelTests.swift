@@ -333,6 +333,23 @@ struct TreManaModelTests {
         #expect(model.selectedTorrentIDs.isEmpty)
     }
 
+    @Test @MainActor func contextMenuRefusesStaleOrUnknownIDs() async {
+        let remote = ControlledRPC(hold: .none, torrents: [fixtureTorrent(2)])
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+
+        await model.perform(.stop, ids: [2, 999])
+        #expect(await remote.performedActions().isEmpty)
+        #expect(model.errorMessage != nil)
+
+        await model.perform(.startNow, ids: [2])
+        let calls = await remote.performedActions()
+        #expect(calls.count == 1)
+        #expect(calls.first?.method == "torrent-start-now")
+        #expect(calls.first?.ids == [2])
+    }
+
     @Test @MainActor func pendingActionCannotRestoreStateAfterDisconnect() async {
         let remote = ControlledRPC(hold: .action, torrents: [fixtureTorrent(1)])
         let model = TreManaModel(makeClient: { _ in remote })
