@@ -382,6 +382,8 @@ public final class TreManaModel {
 
         mutationGeneration &+= 1
         detailGeneration &+= 1
+        isLoadingDetail = false
+        detailErrorMessage = nil
         let ticket = connectionGeneration
         isBusy = true
         fileSelectionChangeInProgress = true
