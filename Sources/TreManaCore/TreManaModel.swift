@@ -31,6 +31,7 @@ public final class TreManaModel {
     public private(set) var savedProfiles: [ConnectionProfile] = []
     public private(set) var server: TransmissionSession?
     public private(set) var torrents: [TransmissionTorrent] = []
+    public private(set) var lastRefreshAt: Date?
 
     @ObservationIgnored
     private let makeClient: @MainActor (TransmissionConnection) -> any TransmissionRPCProviding
@@ -204,6 +205,7 @@ public final class TreManaModel {
             server = info
             client = newClient
             torrents = loaded
+            lastRefreshAt = .now
             selectedTorrentIDs = []
             noticeMessage = nil
             password = ""
@@ -271,6 +273,7 @@ public final class TreManaModel {
             let loaded = try await client.torrents()
             guard connectionGeneration == generation else { return }
             torrents = loaded
+            lastRefreshAt = .now
             selectedTorrentIDs.formIntersection(Set(loaded.map(\.id)))
             errorMessage = nil
         } catch {
@@ -353,6 +356,7 @@ public final class TreManaModel {
         client = nil
         server = nil
         torrents = []
+        lastRefreshAt = nil
         selectedTorrentIDs = []
         errorMessage = nil
         noticeMessage = nil

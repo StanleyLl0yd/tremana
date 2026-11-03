@@ -10,6 +10,7 @@ private enum TorrentFilter: Hashable {
 
 struct ContentView: View {
     @Environment(TreManaModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var filter: TorrentFilter? = .all
     @State private var showingVerifyConfirmation = false
     @State private var showingAddTorrent = false
@@ -74,6 +75,25 @@ struct ContentView: View {
                 ToolbarItem {
                     Button("Disconnect") { model.disconnect() }
                 }
+            }
+        }
+        .task(id: "\(model.isConnected)-\(scenePhase == .active)") {
+            // SwiftUI cancels this task when connection or scene activity changes.
+            // Sleep before refresh: connect and torrent mutations already fetch immediately.
+            while !Task.isCancelled && model.isConnected {
+                let delay = RefreshPolicy.intervalSeconds(
+                    torrents: model.torrents,
+                    isForeground: scenePhase == .active,
+                    hadError: model.errorMessage != nil
+                )
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                } catch {
+                    break
+                }
+                guard !Task.isCancelled && model.isConnected else { break }
+                // Model excludes concurrent RPC polls while a mutation or refresh is in flight.
+                await model.refresh()
             }
         }
         .sheet(isPresented: $showingAddTorrent) {
