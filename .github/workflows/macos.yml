@@ -1,0 +1,55 @@
+name: macOS 27 CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select Xcode 27 toolchain
+        shell: bash
+        run: |
+          if [[ -d /Applications/Xcode_27.2.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_27.2.app/Contents/Developer
+          elif [[ -d /Applications/Xcode_27.1.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app/Contents/Developer
+          else
+            echo "Xcode 27 unavailable" >&2
+            exit 1
+          fi
+          xcodebuild -version
+          swift --version
+      - name: Package manifest
+        run: swift package dump-package > /dev/null
+      - name: Unit tests
+        run: swift test --parallel
+      - name: Build release application
+        run: bash scripts/package-app.sh
+      - name: Check package metadata
+        shell: bash
+        run: |
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/TreMana.app/Contents/Info.plist | grep -Fx 'com.sl.tremana'
+          /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' dist/TreMana.app/Contents/Info.plist | grep -Fx '27.0'
+          test -x dist/TreMana.app/Contents/MacOS/TreMana
+          codesign --verify --strict dist/TreMana.app
+      - name: Archive test build
+        shell: bash
+        run: ditto -c -k --sequesterRsrc --keepParent dist/TreMana.app dist/TreMana-macOS27-arm64.zip
+      - name: Upload test build
+        uses: actions/upload-artifact@v6
+        with:
+          name: TreMana-macOS27-test-build
+          path: dist/TreMana-macOS27-arm64.zip
+          retention-days: 7
