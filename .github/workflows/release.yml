@@ -65,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           swift package dump-package >/dev/null
+          python3 scripts/validate-localizations.py
           swift test --parallel
 
       - name: Package exact version

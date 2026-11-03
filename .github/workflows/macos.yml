@@ -33,6 +33,8 @@ jobs:
           swift --version
       - name: Package manifest
         run: swift package dump-package > /dev/null
+      - name: Verify translation dictionaries
+        run: python3 scripts/validate-localizations.py
       - name: Unit tests
         run: swift test --parallel
       - name: Build release application
