@@ -123,7 +123,7 @@ private struct ConnectionView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if model.savedPasswordAvailable && model.rememberPassword
+                if model.canReuseSavedPassword && model.rememberPassword
                     && model.password.isEmpty {
                     Label("Password saved securely. Leave the field empty to reuse it.", systemImage: "checkmark.shield")
                         .font(.caption)

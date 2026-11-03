@@ -136,6 +136,7 @@ struct TreManaModelTests {
         model.disconnect()
 
         model.rpcURL = "https://untrusted.example/transmission/rpc"
+        #expect(!model.canReuseSavedPassword)
         await model.connect()
         #expect(capture.connection?.url.host == "untrusted.example")
         #expect(capture.connection?.credentials?.password == "")

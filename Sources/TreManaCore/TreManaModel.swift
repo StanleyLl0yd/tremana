@@ -49,6 +49,16 @@ public final class TreManaModel {
 
     public var isConnected: Bool { server != nil && client != nil }
 
+    public var canReuseSavedPassword: Bool {
+        guard savedPasswordAvailable,
+              let saved = savedProfiles.first(where: { $0.id == selectedProfileID }) else {
+            return false
+        }
+        return saved.rpcURL == rpcURL
+            && saved.username == username
+            && saved.allowsInsecureHTTP == allowsInsecureHTTP
+    }
+
     public init(
         makeClient: @escaping @MainActor (TransmissionConnection) -> any TransmissionRPCProviding = {
             TransmissionRPCClient(connection: $0)
