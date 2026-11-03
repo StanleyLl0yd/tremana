@@ -104,7 +104,7 @@ jobs:
           fi
           # The single-ref endpoint can return a JSON null for absent tags.
           # Matching-refs returns [] when absent; filter exact name, never a prefix.
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG"             --jq ".[] | select(.ref == \"refs/tags/$RELEASE_TAG\") | .object.sha")"
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" --jq ".[] | select(.ref == \"refs/tags/$RELEASE_TAG\") | .object.sha")"
           if [[ -n "$existing" && "$existing" != "$GITHUB_SHA" ]]; then
             echo "Tag points to another commit" >&2
             exit 1
