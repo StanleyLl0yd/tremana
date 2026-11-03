@@ -9,9 +9,9 @@ struct TreManaApp: App {
         WindowGroup {
             ContentView()
                 .environment(model)
-                .frame(minWidth: 760, minHeight: 500)
+                .frame(minWidth: 840, minHeight: 560)
         }
-        .defaultSize(width: 1050, height: 690)
+        .defaultSize(width: 1140, height: 740)
 
         Settings {
             Text("Configure your Transmission server in the main window.")
