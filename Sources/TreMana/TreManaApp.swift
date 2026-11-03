@@ -1,4 +1,5 @@
 import SwiftUI
+import TreManaCore
 
 @main
 struct TreManaApp: App {
