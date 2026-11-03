@@ -220,9 +220,9 @@ private struct AddTorrentSheet: View {
         guard model.isConnected, !model.isBusy else { return false }
         switch mode {
         case .magnet:
-            !magnet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return !magnet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .file:
-            selectedFileData != nil
+            return selectedFileData != nil
         }
     }
 
@@ -291,7 +291,12 @@ private struct AddTorrentSheet: View {
             allowsMultipleSelection: false
         ) { result in
             do {
-                let url = try result.get()
+                guard let url = try result.get().first else {
+                    selectedFileName = nil
+                    selectedFileData = nil
+                    fileError = "No .torrent file was selected."
+                    return
+                }
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer {
                     if accessing {
