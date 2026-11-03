@@ -123,6 +123,9 @@ private struct ConnectionView: View {
         @Bindable var form = model
 
         Form {
+            Section {
+                ConnectionHero()
+            }
             Section("Saved Profiles") {
                 Picker("Profile", selection: $form.selectedProfileID) {
                     Text("Custom connection").tag(nil as UUID?)
@@ -185,7 +188,7 @@ private struct ConnectionView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Connect to Transmission")
+        .navigationTitle("Connection")
         .task { await model.reloadProfiles() }
     }
 }
@@ -202,63 +205,106 @@ private struct TorrentTableView: View {
         }
     }
 
+    private var activeCount: Int {
+        model.torrents.filter { [1, 2, 4].contains($0.status) }.count
+    }
+
+    private var seedingCount: Int {
+        model.torrents.filter { $0.status == 6 }.count
+    }
+
+    private var footerMessage: String? {
+        model.profileErrorMessage ?? model.errorMessage ?? model.noticeMessage
+    }
+
+    private var isError: Bool {
+        model.profileErrorMessage != nil || model.errorMessage != nil
+    }
+
     var body: some View {
         @Bindable var observedModel = model
 
         VStack(spacing: 0) {
-            if let server = model.server {
-                HStack {
-                    Text("Transmission \(server.version) · RPC \(server.rpcVersion)")
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Torrents")
+                            .font(.title2.weight(.semibold))
+                        if let server = model.server {
+                            Text("Transmission \(server.version) · RPC \(server.rpcVersion)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     Spacer()
-                    Text("Sequential pieces: unavailable on this server")
+                    GlassEffectContainer(spacing: 12) {
+                        ZenStatusPill(
+                            title: "\(activeCount) active",
+                            symbol: "arrow.down.circle"
+                        )
+                        ZenStatusPill(
+                            title: "\(seedingCount) seeding",
+                            symbol: "arrow.up.circle"
+                        )
+                    }
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                    Text("Sequential piece downloading is not supported by this server")
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(12)
+                .foregroundStyle(.tertiary)
             }
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .padding(.bottom, 16)
+
+            Divider()
+
             Table(filteredTorrents, selection: $observedModel.selectedTorrentIDs) {
                 TableColumn("Name", value: \.name)
                 TableColumn("Progress") { torrent in
-                    Text(torrent.percentDone, format: .percent.precision(.fractionLength(1)))
+                    TorrentProgressCell(progress: torrent.percentDone)
                 }
                 TableColumn("Status") { torrent in
-                    Text(torrent.statusDescription)
+                    TorrentStatusCell(status: torrent.status)
                 }
                 TableColumn("Download") { torrent in
-                    Text(
-                        ByteCountFormatter.string(
-                            fromByteCount: torrent.rateDownload,
-                            countStyle: .binary
-                        ) + "/s"
-                    )
+                    TransferRateCell(bytesPerSecond: torrent.rateDownload)
                 }
                 TableColumn("Upload") { torrent in
-                    Text(
-                        ByteCountFormatter.string(
-                            fromByteCount: torrent.rateUpload,
-                            countStyle: .binary
-                        ) + "/s"
-                    )
+                    TransferRateCell(bytesPerSecond: torrent.rateUpload)
                 }
             }
-            if let notice = model.noticeMessage {
-                Text(notice)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(8)
+            .accessibilityLabel("Transmission torrents")
+
+            Divider()
+
+            HStack(spacing: 10) {
+                if let footerMessage {
+                    Image(systemName: isError ? "exclamationmark.circle" : "checkmark.circle")
+                        .foregroundStyle(isError ? Color.red : Color.secondary)
+                    Text(footerMessage)
+                        .foregroundStyle(isError ? Color.red : Color.secondary)
+                        .lineLimit(2)
+                        .help(footerMessage)
+                } else {
+                    Image(systemName: model.isBusy ? "arrow.triangle.2.circlepath" : "checkmark.circle")
+                        .foregroundStyle(.secondary)
+                    Text(model.isBusy ? "Syncing…" : "Connected")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if let last = model.lastRefreshAt {
+                    Text("Updated \(last, format: .dateTime.hour().minute().second())")
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                        .accessibilityLabel("Last refreshed \(last.formatted())")
+                }
             }
-            if let profileError = model.profileErrorMessage {
-                Text(profileError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(8)
-            }
-            if let message = model.errorMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(8)
-            }
+            .font(.caption)
+            .padding(.horizontal, 22)
+            .frame(height: 48)
         }
         .navigationTitle("Torrents")
     }
