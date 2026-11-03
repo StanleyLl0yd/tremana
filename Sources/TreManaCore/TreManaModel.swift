@@ -24,6 +24,7 @@ public final class TreManaModel {
     public private(set) var savedPasswordAvailable = false
 
     public private(set) var isBusy = false
+    public private(set) var isRefreshing = false
     public private(set) var errorMessage: String?
     public private(set) var noticeMessage: String?
     public private(set) var profileErrorMessage: String?
@@ -41,6 +42,9 @@ public final class TreManaModel {
 
     @ObservationIgnored
     private var connectionGeneration: UInt64 = 0
+
+    @ObservationIgnored
+    private var mutationGeneration: UInt64 = 0
 
     @ObservationIgnored
     private var profileSelectionGeneration: UInt64 = 0
@@ -260,24 +264,29 @@ public final class TreManaModel {
     }
 
     public func refresh() async {
-        guard let client, !isBusy else { return }
+        // A passive poll may not block an explicit user action.
+        guard let client, !isBusy, !isRefreshing else { return }
         let generation = connectionGeneration
-        isBusy = true
+        let mutation = mutationGeneration
+        isRefreshing = true
         defer {
             if connectionGeneration == generation {
-                isBusy = false
+                isRefreshing = false
             }
         }
 
         do {
             let loaded = try await client.torrents()
-            guard connectionGeneration == generation else { return }
+            // An action started while this GET was in flight: ignore its stale snapshot.
+            guard connectionGeneration == generation,
+                  mutationGeneration == mutation else { return }
             torrents = loaded
             lastRefreshAt = .now
             selectedTorrentIDs.formIntersection(Set(loaded.map(\.id)))
             errorMessage = nil
         } catch {
-            guard connectionGeneration == generation else { return }
+            guard connectionGeneration == generation,
+                  mutationGeneration == mutation else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -288,6 +297,7 @@ public final class TreManaModel {
         let ids = selectedTorrentIDs.intersection(availableIDs).sorted()
         guard !ids.isEmpty else { return }
 
+        mutationGeneration &+= 1
         let generation = connectionGeneration
         isBusy = true
         defer {
@@ -317,6 +327,7 @@ public final class TreManaModel {
         startImmediately: Bool
     ) async {
         guard let client, !isBusy else { return }
+        mutationGeneration &+= 1
         let generation = connectionGeneration
         isBusy = true
         defer {
@@ -362,5 +373,7 @@ public final class TreManaModel {
         noticeMessage = nil
         password = ""
         isBusy = false
+        isRefreshing = false
+        mutationGeneration &+= 1
     }
 }
