@@ -407,7 +407,10 @@ public final class TreManaModel {
                   let files = current.files,
                   let stats = current.fileStats,
                   files.count == stats.count,
-                  files.indices.contains(fileIndex) else {
+                  files.count == displayedFiles.count,
+                  files.indices.contains(fileIndex),
+                  files[fileIndex].name == displayedFiles[fileIndex].name,
+                  files[fileIndex].length == displayedFiles[fileIndex].length else {
                 throw TransmissionRPCError.invalidFileSelection
             }
             guard stats[fileIndex].wanted == expectedWanted else {
