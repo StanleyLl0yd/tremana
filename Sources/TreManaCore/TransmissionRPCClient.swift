@@ -10,6 +10,9 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
     case missingArguments
     case unsupportedRPCVersion(Int)
     case invalidTorrentSelection
+    case invalidFileSelection
+    case lastWantedFile
+    case fileSelectionChanged
     case invalidMagnetLink
     case invalidTorrentMetainfo
     case invalidTorrentAddReply
@@ -34,6 +37,12 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
             "RPC version \(version) is not yet supported. TreMana currently supports RPC 16 and 17."
         case .invalidTorrentSelection:
             "Select one or more valid torrents. Refusing an operation that could affect all torrents."
+        case .invalidFileSelection:
+            "File metadata is missing or the selected file index is invalid. No changes were made."
+        case .lastWantedFile:
+            "At least one file must remain selected for download."
+        case .fileSelectionChanged:
+            "File selection changed on the server. Refresh and try again."
         case .invalidMagnetLink:
             "Enter a valid BitTorrent v1 magnet link with an info hash."
         case .invalidTorrentMetainfo:
@@ -173,6 +182,30 @@ public actor TransmissionRPCClient {
         let _: RPCReply<EmptyRPCArguments> = try await send(
             action.rawValue,
             arguments: ["ids": .array(ids.map { .integer($0) })]
+        )
+    }
+
+    public func setFileWanted(
+        torrentID: Int,
+        fileIndex: Int,
+        wanted: Bool
+    ) async throws {
+        guard torrentID > 0 else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        guard fileIndex >= 0 else {
+            throw TransmissionRPCError.invalidFileSelection
+        }
+
+        // Each RPC changes exactly one 0-based file index. Never pass an empty
+        // file array, which legacy Transmission can interpret as all files.
+        let field = wanted ? "files-wanted" : "files-unwanted"
+        let _: RPCReply<EmptyRPCArguments> = try await send(
+            "torrent-set",
+            arguments: [
+                "ids": .array([.integer(torrentID)]),
+                field: .array([.integer(fileIndex)])
+            ]
         )
     }
 
