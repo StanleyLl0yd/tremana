@@ -1,89 +1,33 @@
 # TreMana
 
-**Transmission Remote Manager for macOS**
+**Native Transmission remote manager for macOS.**
 
-TreMana is a native macOS application for remotely
-managing Transmission BitTorrent servers through
-the Transmission RPC API.
+**English** · [Русский](README.ru.md)
 
-Designed for macOS 27 and later, with a focus on
-native integration, performance, and usability.
+TreMana puts torrent management for a remote **Transmission** server into a clean, fast, native Mac app. Keep Transmission on a NAS, router, or another machine — monitor and control it from your Mac.
 
-## Release
+## What you get
 
-**Latest version: 0.1.0**
+- **Fast overview:** progress, transfer speeds, ETA, ratio, seeds, leeches, and reorderable, hideable columns.
+- **Torrent controls:** add a magnet or `.torrent`, start, pause, verify downloaded pieces, reannounce, or remove torrents; deletion of remote data requires confirmation.
+- **Detailed inspection:** files, trackers, peers, and web seeds, with a resizable information pane.
+- **Secure connections:** saved server profiles with passwords in macOS Keychain; HTTPS supported.
+- **Native experience:** SwiftUI, system appearance, adaptive auto-refresh, and no third-party UI runtime.
 
-[Download TreMana 0.1.0 ZIP directly](https://github.com/StanleyLl0yd/tremana/releases/download/v0.1.0/TreMana-v0.1.0-macOS27-arm64.zip)
+<sub>File selection and remote Move/Rename are planned, not available in v0.1.0. Sequential piece downloads are not supported by Transmission 3.00 RPC 16.</sub>
 
-macOS 27+ and Apple Silicon. The published app is ad-hoc signed, not Apple
-Developer ID signed or notarized. On first launch macOS may require approval
-in System Settings > Privacy & Security. Do not disable Gatekeeper globally.
+## Download
 
-### Available in 0.1.0
-- Transmission RPC 16, connection profiles and secure Keychain credentials
-- Native torrent list, customizable table columns and automatic refresh
-- Torrent Details, Files (view only), Trackers, Peers and Web Seeds
-- Magnet / .torrent add, Start, Pause, Verify, Reannounce, Copy Magnet, and guarded removal
+**[Download TreMana 0.1.0 for macOS — ZIP](https://github.com/StanleyLl0yd/tremana/releases/download/v0.1.0/TreMana-v0.1.0-macOS27-arm64.zip)**
 
-### Planned, not yet shipped
-- Interactive selection of files to download (#23)
-- Remote Move and Rename (#27)
-- Strict autonomous file queue, other advanced server controls
+**Requires:** macOS **27 or newer**, **Apple Silicon (arm64)**, and access to a Transmission server (tested with **3.00 / RPC 16**).
 
-Read [release notes](docs/releases/v0.1.0.md) and the
-[versioning policy](docs/VERSIONING.md).
+Unzip, move `TreMana.app` to Applications, and open it. The v0.1.0 binary is **ad-hoc signed, not Apple notarized**; macOS may ask for a one-time approval in **System Settings → Privacy & Security**. Do not disable Gatekeeper globally.
 
-## Download modes
+Keep your Transmission RPC port restricted to trusted networks. Prefer HTTPS or a trusted VPN; use plain HTTP only on a trusted LAN.
 
-TreMana is designed to expose two independent options:
+## Links
 
-1. Sequential piece downloading
-2. Strict file download queue
+[Release notes](docs/releases/v0.1.0.md) · [Issues & requests](https://github.com/StanleyLl0yd/tremana/issues) · [Security](SECURITY.md) · [MIT license](LICENSE)
 
-Either option may be selected independently or together.
-
-Feature availability depends on server capabilities.
-Unsupported server-side functionality must be reported
-clearly rather than silently simulated.
-
-## Compatibility
-
-Initial target:
-
-- macOS 27+
-- Transmission 3.00 / RPC 16
-
-Additional Transmission versions will be evaluated
-through compatibility tests.
-
-## Technology
-
-- Swift
-- SwiftUI
-- AppKit
-- Swift Concurrency
-- URLSession
-- macOS Keychain
-
-Current stable, compatible development tools are preferred.
-
-## Security
-
-Credentials must be stored securely in macOS Keychain.
-TLS certificate validation must not be disabled.
-Remote connections should use HTTPS or a trusted VPN.
-
-## Development
-
-See [Requirements](docs/REQUIREMENTS.md) and
-[Roadmap](docs/ROADMAP.md).
-
-## License
-
-MIT. See [LICENSE](LICENSE).
-
-## Disclaimer
-
-TreMana is an independent third-party application.
-It is not affiliated with the Transmission or
-Keenetic projects.
+TreMana is an independent third-party client, not affiliated with Transmission or Keenetic.
