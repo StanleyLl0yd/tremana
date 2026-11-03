@@ -11,6 +11,7 @@ private enum TorrentFilter: Hashable {
 struct ContentView: View {
     @Environment(TreManaModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.appearsActive) private var appearsActive
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
@@ -26,8 +27,12 @@ struct ContentView: View {
         )
     }
 
+    private var isWindowForeground: Bool {
+        scenePhase == .active && appearsActive
+    }
+
     private var refreshLoopIdentity: String {
-        "\(model.isConnected)-\(scenePhase == .active)-\(autoRefreshEnabled)-\(refreshMode)-\(fixedInterval)"
+        "\(model.isConnected)-\(isWindowForeground)-\(autoRefreshEnabled)-\(refreshMode)-\(fixedInterval)"
     }
 
     var body: some View {
@@ -98,7 +103,7 @@ struct ContentView: View {
             while !Task.isCancelled && model.isConnected {
                 guard let delay = refreshConfiguration.intervalSeconds(
                     torrents: model.torrents,
-                    isForeground: scenePhase == .active,
+                    isForeground: isWindowForeground,
                     hadError: model.errorMessage != nil
                 ) else { break }
                 do {
@@ -110,8 +115,8 @@ struct ContentView: View {
                 await model.refresh()
             }
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            if oldPhase != .active && newPhase == .active,
+        .onChange(of: isWindowForeground) { wasForeground, isForeground in
+            if !wasForeground && isForeground,
                model.isConnected && autoRefreshEnabled {
                 // Return to an already connected window with fresh data.
                 Task { await model.refresh() }
