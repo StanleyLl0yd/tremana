@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TreManaCore
 
-@Suite("Transmission 3.00 RPC")
+@Suite("Transmission 3.00 RPC", .serialized)
 struct TransmissionRPCTests {
     @Test func sessionHandshakeAndTorrentList() async throws {
         MockURLProtocol.responses.replace([
