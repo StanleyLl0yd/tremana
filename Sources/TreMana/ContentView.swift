@@ -1,5 +1,6 @@
 import SwiftUI
 import TreManaCore
+import UniformTypeIdentifiers
 
 private enum TorrentFilter: Hashable {
     case all
@@ -11,6 +12,7 @@ struct ContentView: View {
     @Environment(TreManaModel.self) private var model
     @State private var filter: TorrentFilter? = .all
     @State private var showingVerifyConfirmation = false
+    @State private var showingAddTorrent = false
 
     var body: some View {
         NavigationSplitView {
@@ -34,6 +36,13 @@ struct ContentView: View {
         .toolbar {
             if model.isConnected {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        showingAddTorrent = true
+                    } label: {
+                        Label("Add Torrent", systemImage: "plus")
+                    }
+                    .disabled(model.isBusy)
+
                     Button {
                         Task { await model.perform(.start) }
                     } label: {
@@ -66,6 +75,9 @@ struct ContentView: View {
                     Button("Disconnect") { model.disconnect() }
                 }
             }
+        }
+        .sheet(isPresented: $showingAddTorrent) {
+            AddTorrentSheet()
         }
         .onChange(of: filter) { _, _ in
             model.selectedTorrentIDs.removeAll()
@@ -169,6 +181,12 @@ private struct TorrentTableView: View {
                     )
                 }
             }
+            if let notice = model.noticeMessage {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+            }
             if let message = model.errorMessage {
                 Text(message)
                     .font(.caption)
@@ -177,5 +195,124 @@ private struct TorrentTableView: View {
             }
         }
         .navigationTitle("Torrents")
+    }
+}
+
+
+private enum TorrentSourceMode: Hashable {
+    case magnet
+    case file
+}
+
+private struct AddTorrentSheet: View {
+    @Environment(TreManaModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var mode: TorrentSourceMode = .magnet
+    @State private var magnet = ""
+    @State private var startImmediately = true
+    @State private var showingFileImporter = false
+    @State private var selectedFileName: String?
+    @State private var selectedFileData: Data?
+    @State private var fileError: String?
+
+    private var canAdd: Bool {
+        guard model.isConnected, !model.isBusy else { return false }
+        switch mode {
+        case .magnet:
+            !magnet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .file:
+            selectedFileData != nil
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add Torrent")
+                .font(.title2)
+
+            Picker("Source", selection: $mode) {
+                Text("Magnet link").tag(TorrentSourceMode.magnet)
+                Text(".torrent file").tag(TorrentSourceMode.file)
+            }
+            .pickerStyle(.segmented)
+
+            if mode == .magnet {
+                TextField("magnet:?xt=urn:btih:…", text: $magnet)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+            } else {
+                Button("Choose .torrent File…") {
+                    showingFileImporter = true
+                }
+                if let selectedFileName {
+                    Text(selectedFileName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Toggle("Start immediately", isOn: $startImmediately)
+
+            if let fileError {
+                Text(fileError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Add") {
+                    let source: TorrentAddSource
+                    switch mode {
+                    case .magnet:
+                        source = .magnet(magnet)
+                    case .file:
+                        guard let selectedFileData else { return }
+                        source = .metainfo(selectedFileData)
+                    }
+                    dismiss()
+                    Task {
+                        await model.addTorrent(
+                            source, startImmediately: startImmediately
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canAdd)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [UTType(filenameExtension: "torrent") ?? .data],
+            allowsMultipleSelection: false
+        ) { result in
+            do {
+                let url = try result.get()
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer {
+                    if accessing {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                let data = try Data(contentsOf: url)
+                guard !data.isEmpty, data.count <= 16 * 1024 * 1024 else {
+                    selectedFileName = nil
+                    selectedFileData = nil
+                    fileError = "Select a .torrent file smaller than 16 MiB."
+                    return
+                }
+                selectedFileName = url.lastPathComponent
+                selectedFileData = data
+                fileError = nil
+            } catch {
+                selectedFileName = nil
+                selectedFileData = nil
+                fileError = error.localizedDescription
+            }
+        }
     }
 }

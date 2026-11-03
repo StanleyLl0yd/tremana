@@ -5,6 +5,7 @@ public protocol TransmissionRPCProviding: Sendable {
     func sessionInfo() async throws -> TransmissionSession
     func torrents() async throws -> [TransmissionTorrent]
     func perform(_ action: TorrentAction, ids: [Int]) async throws
+    func addTorrent(_ source: TorrentAddSource, startImmediately: Bool) async throws -> TorrentAddOutcome
 }
 
 extension TransmissionRPCClient: TransmissionRPCProviding {}
@@ -20,6 +21,7 @@ public final class TreManaModel {
 
     public private(set) var isBusy = false
     public private(set) var errorMessage: String?
+    public private(set) var noticeMessage: String?
     public private(set) var server: TransmissionSession?
     public private(set) var torrents: [TransmissionTorrent] = []
 
@@ -77,6 +79,7 @@ public final class TreManaModel {
             client = newClient
             torrents = loaded
             selectedTorrentIDs = []
+            noticeMessage = nil
             password = ""
         } catch {
             guard connectionGeneration == generation else { return }
@@ -136,6 +139,44 @@ public final class TreManaModel {
         }
     }
 
+    public func addTorrent(
+        _ source: TorrentAddSource,
+        startImmediately: Bool
+    ) async {
+        guard let client, !isBusy else { return }
+        let generation = connectionGeneration
+        isBusy = true
+        defer {
+            if connectionGeneration == generation {
+                isBusy = false
+            }
+        }
+
+        do {
+            let outcome = try await client.addTorrent(
+                source, startImmediately: startImmediately
+            )
+            guard connectionGeneration == generation else { return }
+
+            let loaded = try await client.torrents()
+            guard connectionGeneration == generation else { return }
+
+            torrents = loaded
+            selectedTorrentIDs.formIntersection(Set(loaded.map(\.id)))
+            errorMessage = nil
+            switch outcome {
+            case .added(let torrent):
+                noticeMessage = "Added: \(torrent.name)"
+            case .duplicate(let torrent):
+                noticeMessage = "Already exists: \(torrent.name)"
+            }
+        } catch {
+            guard connectionGeneration == generation else { return }
+            noticeMessage = nil
+            errorMessage = error.localizedDescription
+        }
+    }
+
     public func disconnect() {
         // Discard pending network replies, including those from earlier connections.
         connectionGeneration &+= 1
@@ -144,6 +185,7 @@ public final class TreManaModel {
         torrents = []
         selectedTorrentIDs = []
         errorMessage = nil
+        noticeMessage = nil
         password = ""
         isBusy = false
     }

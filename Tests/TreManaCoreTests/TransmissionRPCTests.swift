@@ -150,6 +150,101 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test func magnetAddUsesLegacyRPC16Vocabulary() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrent-added":{"id":17,"name":"Sample","hashString":"0123456789abcdef0123456789abcdef01234567"}}}"#)
+        ])
+        let client = try makeClient()
+        let link = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Sample"
+
+        let outcome = try await client.addTorrent(.magnet(link), startImmediately: false)
+
+        guard case .added(let torrent) = outcome else {
+            Issue.record("Expected torrent-added")
+            return
+        }
+        #expect(torrent.id == 17)
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-add")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["filename"] as? String == link)
+        #expect(arguments["paused"] as? Bool == true)
+        #expect(arguments["metainfo"] == nil)
+    }
+
+    @Test func duplicateMagnetIsReportedAsDuplicate() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrent-duplicate":{"id":18,"name":"Existing","hashString":"0123456789abcdef0123456789abcdef01234567"}}}"#)
+        ])
+        let client = try makeClient()
+        let outcome = try await client.addTorrent(
+            .magnet("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"),
+            startImmediately: true
+        )
+        guard case .duplicate(let torrent) = outcome else {
+            Issue.record("Duplicate wrongly reported as newly added")
+            return
+        }
+        #expect(torrent.name == "Existing")
+        let args = try #require(
+            MockURLProtocol.responses.lastRequest?["arguments"] as? [String: Any]
+        )
+        #expect(args["paused"] as? Bool == false)
+    }
+
+    @Test func torrentFileUsesBase64MetainfoWithoutLocalPath() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"torrent-added":{"id":20,"name":"File","hashString":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}"#)
+        ])
+        let client = try makeClient()
+        let metadata = Data("d4:infod4:name4:teste".utf8)
+        _ = try await client.addTorrent(.metainfo(metadata), startImmediately: false)
+        let args = try #require(
+            MockURLProtocol.responses.lastRequest?["arguments"] as? [String: Any]
+        )
+        #expect(args["metainfo"] as? String == metadata.base64EncodedString())
+        #expect(args["filename"] == nil)
+        #expect(args["paused"] as? Bool == true)
+    }
+
+    @Test func invalidTorrentInputNeverHitsRPC() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        let inputs: [TorrentAddSource] = [
+            .magnet("http://example.com/file.torrent"),
+            .magnet("magnet:?xt=urn:btih:short"),
+            .metainfo(Data())
+        ]
+        for input in inputs {
+            do {
+                _ = try await client.addTorrent(input, startImmediately: true)
+                Issue.record("Expected invalid torrent input")
+            } catch let error as TransmissionRPCError {
+                #expect(
+                    error == .invalidMagnetLink ||
+                    error == .invalidTorrentMetainfo
+                )
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
+    @Test func malformedSuccessfulAddIsRejected() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{}}"#)
+        ])
+        let client = try makeClient()
+        do {
+            _ = try await client.addTorrent(
+                .magnet("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"),
+                startImmediately: true
+            )
+            Issue.record("Expected invalid add response")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .invalidTorrentAddReply)
+        }
+    }
+
     private func makeClient() throws -> TransmissionRPCClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
