@@ -149,7 +149,7 @@ private struct TorrentCommandBar: View {
     let verify: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             if showSidebar {
                 Button(action: revealSidebar) {
                     Label("Show Sidebar", systemImage: "sidebar.left")
@@ -177,9 +177,9 @@ private struct TorrentCommandBar: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .padding(.vertical, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
     }
@@ -192,19 +192,19 @@ private struct CommandButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(height: 23)
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(height: 18)
                 Text(title)
                     .font(.caption2.weight(.medium))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .frame(width: 80, height: 50)
+            .frame(width: 68, height: 42)
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.borderless)
         .help(title)
         .accessibilityLabel(title)
     }
@@ -290,6 +290,7 @@ private struct ConnectionView: View {
 private struct TorrentTableView: View {
     @Environment(TreManaModel.self) private var model
     let filter: TorrentFilter
+    @State private var inspectorExpanded = false
 
     private var filteredTorrents: [TransmissionTorrent] {
         switch filter {
@@ -319,93 +320,86 @@ private struct TorrentTableView: View {
         @Bindable var observedModel = model
 
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Torrents")
-                            .font(.title2.weight(.semibold))
-                        if let server = model.server {
-                            Text("Transmission \(server.version) · RPC \(server.rpcVersion)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+            HStack(spacing: 9) {
+                Text("Torrents")
+                    .font(.headline)
+                Text(model.torrents.count, format: .number)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            if inspectorExpanded {
+                TorrentInspectorView(isExpanded: $inspectorExpanded)
+                    .frame(maxHeight: .infinity)
+            } else {
+                VSplitView {
+                    Table(filteredTorrents, selection: $observedModel.selectedTorrentIDs) {
+                        TableColumn("Name", value: \.name)
+                        TableColumn("Progress") { torrent in
+                            TorrentProgressCell(progress: torrent.percentDone)
+                        }
+                        TableColumn("Status") { torrent in
+                            TorrentStatusCell(status: torrent.status)
+                        }
+                        TableColumn("Download") { torrent in
+                            TransferRateCell(bytesPerSecond: torrent.rateDownload)
+                        }
+                        TableColumn("Upload") { torrent in
+                            TransferRateCell(bytesPerSecond: torrent.rateUpload)
                         }
                     }
-                    Spacer()
-                    GlassEffectContainer(spacing: 12) {
-                        ZenStatusPill(
-                            title: "\(activeCount) active",
-                            symbol: "arrow.down.circle"
-                        )
-                        ZenStatusPill(
-                            title: "\(seedingCount) seeding",
-                            symbol: "arrow.up.circle"
-                        )
-                    }
+                    .accessibilityLabel("Transmission torrents")
+                    .alternatingRowBackgrounds(.disabled)
+                    .frame(minHeight: 85)
+                    TorrentInspectorView(isExpanded: $inspectorExpanded)
+                        .frame(minHeight: 120, idealHeight: 315)
                 }
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle")
-                    Text("Sequential piece downloading is not supported by this server")
-                }
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 22)
-            .padding(.top, 18)
-            .padding(.bottom, 16)
-
-            Divider()
-
-            VSplitView {
-                Table(filteredTorrents, selection: $observedModel.selectedTorrentIDs) {
-                    TableColumn("Name", value: \.name)
-                    TableColumn("Progress") { torrent in
-                        TorrentProgressCell(progress: torrent.percentDone)
-                    }
-                    TableColumn("Status") { torrent in
-                        TorrentStatusCell(status: torrent.status)
-                    }
-                    TableColumn("Download") { torrent in
-                        TransferRateCell(bytesPerSecond: torrent.rateDownload)
-                    }
-                    TableColumn("Upload") { torrent in
-                        TransferRateCell(bytesPerSecond: torrent.rateUpload)
-                    }
-                }
-                .accessibilityLabel("Transmission torrents")
-                .alternatingRowBackgrounds(.disabled)
-                .frame(minHeight: 175)
-
-                TorrentInspectorView()
-                    .frame(minHeight: 185, idealHeight: 260)
             }
 
             Divider()
 
-            HStack(spacing: 10) {
+            HStack(spacing: 9) {
                 if let footerMessage {
-                    Image(systemName: isError ? "exclamationmark.circle" : "checkmark.circle")
+                    Image(systemName: isError ? "exclamationmark.circle.fill" : "checkmark.circle")
                         .foregroundStyle(isError ? Color.red : Color.secondary)
                     Text(footerMessage)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .foregroundStyle(isError ? Color.red : Color.secondary)
-                        .lineLimit(2)
                         .help(footerMessage)
                 } else {
-                    Image(systemName: model.isBusy || model.isRefreshing ? "arrow.triangle.2.circlepath" : "checkmark.circle")
-                        .foregroundStyle(.secondary)
-                    Text(model.isBusy ? "Applying changes…" : model.isRefreshing ? "Syncing…" : "Connected")
+                    Label(model.isBusy ? "Applying…" : model.isRefreshing ? "Syncing…" : "Connected",
+                          systemImage: "checkmark.circle")
                         .foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
+                if let server = model.server {
+                    Text("Transmission \(server.version) · RPC \(server.rpcVersion)")
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                    Divider().frame(height: 15)
+                    Label("\(activeCount)", systemImage: "arrow.down.circle")
+                        .help("Active transfers")
+                    Label("\(seedingCount)", systemImage: "arrow.up.circle")
+                        .help("Seeding torrents")
+                    Divider().frame(height: 15)
+                }
                 if let last = model.lastRefreshAt {
-                    Text("Updated \(last, format: .dateTime.hour().minute().second())")
-                        .foregroundStyle(.tertiary)
+                    Text(last, format: .dateTime.hour().minute().second())
                         .monospacedDigit()
-                        .accessibilityLabel("Last refreshed \(last.formatted())")
+                        .foregroundStyle(.secondary)
+                        .help("Last refreshed: \(last.formatted())")
                 }
             }
             .font(.caption)
-            .padding(.horizontal, 22)
-            .frame(height: 48)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
         }
         .navigationTitle("Torrents")
     }

@@ -134,8 +134,7 @@ public actor TransmissionRPCClient {
             "activityDate", "secondsDownloading", "secondsSeeding",
             "peersConnected", "peersSendingToUs", "peersGettingFromUs",
             "files", "fileStats", "trackers", "trackerStats", "peers",
-            "webseeds", "downloadLimit", "uploadLimit", "downloadLimited",
-            "uploadLimited", "honorsSessionLimits", "errorString"
+            "webseeds", "errorString"
         ]
         let response: TransmissionTorrentDetailList = try await call(
             "torrent-get",
