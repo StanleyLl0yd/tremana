@@ -21,6 +21,7 @@ public final class TreManaModel {
     public var selectedProfileID: UUID?
     public var profileName = ""
     public var rememberPassword = false
+    public private(set) var savedPasswordAvailable = false
 
     public private(set) var isBusy = false
     public private(set) var errorMessage: String?
@@ -63,8 +64,17 @@ public final class TreManaModel {
         profilesBusy = true
         defer { profilesBusy = false }
         do {
-            savedProfiles = try await profileStore.list()
+            let loaded = try await profileStore.list()
+            savedProfiles = loaded
             profileErrorMessage = nil
+            if selectedProfileID == nil && password.isEmpty && username.isEmpty {
+                let preferred = await profileStore.preferredProfileID()
+                let id = loaded.first(where: { $0.id == preferred })?.id
+                    ?? loaded.first?.id
+                if let id {
+                    await chooseProfile(id)
+                }
+            }
         } catch {
             profileErrorMessage = error.localizedDescription
         }
@@ -76,6 +86,7 @@ public final class TreManaModel {
         selectedProfileID = id
         password = ""
         rememberPassword = false
+        savedPasswordAvailable = false
         profileErrorMessage = nil
 
         guard let id else {
@@ -96,53 +107,11 @@ public final class TreManaModel {
             let stored = try await profileStore.password(for: id)
             guard profileSelectionGeneration == generation else { return }
             // Never populate the text field with secrets retrieved from Keychain.
-            rememberPassword = stored != nil
+            rememberPassword = true
+            savedPasswordAvailable = stored != nil
+            await profileStore.setPreferredProfileID(id)
         } catch {
             guard profileSelectionGeneration == generation else { return }
-            profileErrorMessage = error.localizedDescription
-        }
-    }
-
-    public func saveCurrentProfile() async {
-        guard !profilesBusy else { return }
-        profilesBusy = true
-        defer { profilesBusy = false }
-
-        do {
-            let id = selectedProfileID ?? UUID()
-            let profile = ConnectionProfile(
-                id: id,
-                name: profileName,
-                rpcURL: rpcURL,
-                username: username,
-                allowsInsecureHTTP: allowsInsecureHTTP
-            )
-            let update: ProfilePasswordUpdate
-            if rememberPassword {
-                guard !username.isEmpty else {
-                    throw ProfileStorageError.passwordRequired
-                }
-                if !password.isEmpty {
-                    update = .replace(password)
-                } else {
-                    guard let previous = savedProfiles.first(where: { $0.id == id }),
-                          previous.rpcURL == rpcURL,
-                          previous.username == username,
-                          previous.allowsInsecureHTTP == allowsInsecureHTTP else {
-                        throw ProfileStorageError.passwordRequired
-                    }
-                    update = .keep
-                }
-            } else {
-                update = .remove
-            }
-
-            try await profileStore.save(profile, password: update)
-            savedProfiles = try await profileStore.list()
-            selectedProfileID = id
-            profileErrorMessage = nil
-            password = ""
-        } catch {
             profileErrorMessage = error.localizedDescription
         }
     }
@@ -159,6 +128,7 @@ public final class TreManaModel {
             selectedProfileID = nil
             profileName = ""
             rememberPassword = false
+            savedPasswordAvailable = false
             password = ""
             profileErrorMessage = nil
         } catch {
@@ -177,34 +147,47 @@ public final class TreManaModel {
             }
         }
         errorMessage = nil
+        profileErrorMessage = nil
+
+        // Capture the user's explicit choice before asynchronous network work.
+        let requestedURL = rpcURL
+        let requestedUsername = username
+        let enteredPassword = password
+        let shouldRemember = rememberPassword
+        let chosenProfileID = selectedProfileID
+        let requestedName = profileName
+        let insecureHTTP = allowsInsecureHTTP
 
         do {
-            guard let url = URL(string: rpcURL) else {
+            guard let url = URL(string: requestedURL) else {
                 throw TransmissionRPCError.invalidURL
             }
-            let saved = savedProfiles.first(where: { $0.id == selectedProfileID })
-            let sameEndpoint = saved?.rpcURL == rpcURL
-                && saved?.username == username
-                && saved?.allowsInsecureHTTP == allowsInsecureHTTP
-            var effectivePassword = password
+            let existing = savedProfiles.first(where: { $0.id == chosenProfileID })
+            let sameEndpoint = existing?.rpcURL == requestedURL
+                && existing?.username == requestedUsername
+                && existing?.allowsInsecureHTTP == insecureHTTP
+
+            var effectivePassword = enteredPassword
             if effectivePassword.isEmpty,
-               sameEndpoint, rememberPassword,
-               let selectedProfileID, !username.isEmpty {
-                effectivePassword = try await profileStore.password(for: selectedProfileID) ?? ""
+               sameEndpoint, shouldRemember, let chosenProfileID,
+               !requestedUsername.isEmpty {
+                effectivePassword = try await profileStore.password(for: chosenProfileID) ?? ""
                 guard connectionGeneration == generation else { return }
             }
-            let credentials: RPCBasicCredentials? = username.isEmpty
+
+            let credentials: RPCBasicCredentials? = requestedUsername.isEmpty
                 ? nil
-                : RPCBasicCredentials(username: username, password: effectivePassword)
+                : RPCBasicCredentials(
+                    username: requestedUsername, password: effectivePassword
+                )
             let connection = try TransmissionConnection(
                 url: url,
                 credentials: credentials,
-                allowInsecureHTTP: allowsInsecureHTTP
+                allowInsecureHTTP: insecureHTTP
             )
             let newClient = makeClient(connection)
             let info = try await newClient.sessionInfo()
             guard connectionGeneration == generation else { return }
-
             let loaded = try await newClient.torrents()
             guard connectionGeneration == generation else { return }
 
@@ -214,6 +197,50 @@ public final class TreManaModel {
             selectedTorrentIDs = []
             noticeMessage = nil
             password = ""
+
+            guard shouldRemember else { return }
+            // Never reuse an existing profile's credential on a changed endpoint.
+            let identicalProfile = sameEndpoint ? existing : savedProfiles.first {
+                $0.rpcURL == requestedURL
+                    && $0.username == requestedUsername
+                    && $0.allowsInsecureHTTP == insecureHTTP
+            }
+            let id = identicalProfile?.id ?? UUID()
+            let name = identicalProfile == nil && existing != nil
+                ? (url.host ?? "Transmission")
+                : (requestedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? (identicalProfile?.name ?? url.host ?? "Transmission")
+                    : requestedName)
+            let profile = ConnectionProfile(
+                id: id, name: name, rpcURL: requestedURL,
+                username: requestedUsername, allowsInsecureHTTP: insecureHTTP
+            )
+            let update: ProfilePasswordUpdate
+            if requestedUsername.isEmpty || effectivePassword.isEmpty {
+                update = .remove
+            } else if sameEndpoint && enteredPassword.isEmpty {
+                update = .keep
+            } else {
+                update = .replace(effectivePassword)
+            }
+
+            do {
+                try await profileStore.save(profile, password: update)
+                let refreshed = try await profileStore.list()
+                await profileStore.setPreferredProfileID(id)
+                guard connectionGeneration == generation else { return }
+
+                savedProfiles = refreshed
+                selectedProfileID = id
+                profileName = profile.name
+                savedPasswordAvailable = !requestedUsername.isEmpty
+                    && !effectivePassword.isEmpty
+                profileErrorMessage = nil
+                noticeMessage = "Connection remembered securely"
+            } catch {
+                guard connectionGeneration == generation else { return }
+                profileErrorMessage = "Connected, but saving failed: \(error.localizedDescription)"
+            }
         } catch {
             guard connectionGeneration == generation else { return }
             errorMessage = error.localizedDescription
