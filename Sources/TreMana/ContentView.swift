@@ -372,6 +372,7 @@ private struct TorrentTableView: View {
                     }
                 }
                 .accessibilityLabel("Transmission torrents")
+                .alternatingRowBackgrounds(.disabled)
                 .frame(minHeight: 175)
 
                 TorrentInspectorView()
