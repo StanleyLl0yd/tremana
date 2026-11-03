@@ -287,7 +287,7 @@ public final class TreManaModel {
             return
         }
 
-        selectedTorrentDetail = nil
+        if selectedTorrentDetail?.id != id { selectedTorrentDetail = nil }
         detailErrorMessage = nil
         isLoadingDetail = true
         defer {
@@ -366,6 +366,8 @@ public final class TreManaModel {
             torrents = loaded
             selectedTorrentIDs.formIntersection(Set(loaded.map(\.id)))
             errorMessage = nil
+            // Mutation results are visible in the inspector immediately.
+            await loadSelectedTorrentDetails()
         } catch {
             guard connectionGeneration == generation else { return }
             errorMessage = error.localizedDescription
