@@ -29,4 +29,19 @@ struct RPCRequest: Encodable {
 struct RPCReply<Value: Decodable>: Decodable {
     let result: String
     let arguments: Value?
+
+    enum CodingKeys: String, CodingKey {
+        case result
+        case arguments
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        result = try values.decode(String.self, forKey: .result)
+        // Error replies may contain incomplete or differently-shaped arguments.
+        // Check result before attempting to decode the typed success payload.
+        arguments = result == "success"
+            ? try values.decodeIfPresent(Value.self, forKey: .arguments)
+            : nil
+    }
 }
