@@ -355,22 +355,28 @@ private struct TorrentTableView: View {
 
             Divider()
 
-            Table(filteredTorrents, selection: $observedModel.selectedTorrentIDs) {
-                TableColumn("Name", value: \.name)
-                TableColumn("Progress") { torrent in
-                    TorrentProgressCell(progress: torrent.percentDone)
+            VSplitView {
+                Table(filteredTorrents, selection: $observedModel.selectedTorrentIDs) {
+                    TableColumn("Name", value: \.name)
+                    TableColumn("Progress") { torrent in
+                        TorrentProgressCell(progress: torrent.percentDone)
+                    }
+                    TableColumn("Status") { torrent in
+                        TorrentStatusCell(status: torrent.status)
+                    }
+                    TableColumn("Download") { torrent in
+                        TransferRateCell(bytesPerSecond: torrent.rateDownload)
+                    }
+                    TableColumn("Upload") { torrent in
+                        TransferRateCell(bytesPerSecond: torrent.rateUpload)
+                    }
                 }
-                TableColumn("Status") { torrent in
-                    TorrentStatusCell(status: torrent.status)
-                }
-                TableColumn("Download") { torrent in
-                    TransferRateCell(bytesPerSecond: torrent.rateDownload)
-                }
-                TableColumn("Upload") { torrent in
-                    TransferRateCell(bytesPerSecond: torrent.rateUpload)
-                }
+                .accessibilityLabel("Transmission torrents")
+                .frame(minHeight: 175)
+
+                TorrentInspectorView()
+                    .frame(minHeight: 185, idealHeight: 260)
             }
-            .accessibilityLabel("Transmission torrents")
 
             Divider()
 
