@@ -191,7 +191,20 @@ private final class ResponseQueue: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         seenIDs.append(request.value(forHTTPHeaderField: "X-Transmission-Session-Id"))
-        if let data = request.httpBody { requestBodies.append(data) }
+        if let data = request.httpBody {
+            requestBodies.append(data)
+        } else if let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                guard count > 0 else { break }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+            if !data.isEmpty { requestBodies.append(data) }
+        }
         if pending.isEmpty { return MockResponse(status: 500) }
         return pending.removeFirst()
     }
