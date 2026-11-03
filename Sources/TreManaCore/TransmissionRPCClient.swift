@@ -114,13 +114,31 @@ public actor TransmissionRPCClient {
     public func torrents() async throws -> [TransmissionTorrent] {
         let fields = [
             "id", "name", "status", "percentDone", "rateDownload",
-            "rateUpload", "sizeWhenDone", "eta", "errorString"
+            "rateUpload", "sizeWhenDone", "eta", "errorString",
+            "addedDate", "doneDate", "uploadRatio", "uploadedEver",
+            "downloadedEver", "totalSize", "leftUntilDone", "peersConnected",
+            "peersSendingToUs", "peersGettingFromUs", "queuePosition"
         ]
         let response: TorrentList = try await call(
             "torrent-get",
             arguments: ["fields": .array(fields.map { .string($0) })]
         )
         return response.torrents
+    }
+
+    public func torrentSwarm() async throws -> [Int: TorrentSwarmCounts] {
+        // Tracker stats are much larger than scalar fields. Poll separately.
+        let response: TorrentSwarmList = try await call(
+            "torrent-get",
+            arguments: [
+                "fields": .array([.string("id"), .string("trackerStats")])
+            ]
+        )
+        var result: [Int: TorrentSwarmCounts] = [:]
+        for torrent in response.torrents where torrent.id > 0 {
+            result[torrent.id] = torrent.counts
+        }
+        return result
     }
 
     public func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail? {

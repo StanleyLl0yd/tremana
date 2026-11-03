@@ -42,6 +42,17 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
     public let rateUpload: Int64
     public let sizeWhenDone: Int64
     public let eta: Int
+    public let addedDate: Int?
+    public let doneDate: Int?
+    public let uploadRatio: Double?
+    public let uploadedEver: Int64?
+    public let downloadedEver: Int64?
+    public let totalSize: Int64?
+    public let leftUntilDone: Int64?
+    public let peersConnected: Int?
+    public let peersSendingToUs: Int?
+    public let peersGettingFromUs: Int?
+    public let queuePosition: Int?
     public let errorString: String
 
     public var statusDescription: String {
@@ -59,4 +70,42 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
 
 struct TorrentList: Decodable {
     let torrents: [TransmissionTorrent]
+}
+
+
+/// Tracker-reported swarm totals. Do not sum across trackers: duplicate peers.
+public struct TorrentSwarmCounts: Sendable, Equatable {
+    public let seeds: Int?
+    public let leeches: Int?
+
+    public init(seeds: Int?, leeches: Int?) {
+        self.seeds = seeds
+        self.leeches = leeches
+    }
+}
+
+struct TorrentSwarmList: Decodable {
+    let torrents: [TorrentSwarmRecord]
+}
+
+struct TorrentSwarmRecord: Decodable {
+    let id: Int
+    let trackerStats: [TorrentSwarmTracker]?
+
+    var counts: TorrentSwarmCounts {
+        let seeds = trackerStats?.compactMap { value -> Int? in
+            guard let count = value.seederCount, count >= 0 else { return nil }
+            return count
+        }.max()
+        let leeches = trackerStats?.compactMap { value -> Int? in
+            guard let count = value.leecherCount, count >= 0 else { return nil }
+            return count
+        }.max()
+        return TorrentSwarmCounts(seeds: seeds, leeches: leeches)
+    }
+}
+
+struct TorrentSwarmTracker: Decodable {
+    let seederCount: Int?
+    let leecherCount: Int?
 }

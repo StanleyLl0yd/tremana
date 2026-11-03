@@ -4,9 +4,14 @@ import Observation
 public protocol TransmissionRPCProviding: Sendable {
     func sessionInfo() async throws -> TransmissionSession
     func torrents() async throws -> [TransmissionTorrent]
+    func torrentSwarm() async throws -> [Int: TorrentSwarmCounts]
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func perform(_ action: TorrentAction, ids: [Int]) async throws
     func addTorrent(_ source: TorrentAddSource, startImmediately: Bool) async throws -> TorrentAddOutcome
+}
+
+extension TransmissionRPCProviding {
+    public func torrentSwarm() async throws -> [Int: TorrentSwarmCounts] { [:] }
 }
 
 extension TransmissionRPCClient: TransmissionRPCProviding {}
@@ -33,6 +38,8 @@ public final class TreManaModel {
     public private(set) var savedProfiles: [ConnectionProfile] = []
     public private(set) var server: TransmissionSession?
     public private(set) var torrents: [TransmissionTorrent] = []
+    public private(set) var swarmCounts: [Int: TorrentSwarmCounts] = [:]
+    public private(set) var isRefreshingSwarm = false
     public private(set) var lastRefreshAt: Date?
     public private(set) var selectedTorrentDetail: TransmissionTorrentDetail?
     public private(set) var detailErrorMessage: String?
@@ -216,6 +223,7 @@ public final class TreManaModel {
             server = info
             client = newClient
             torrents = loaded
+            swarmCounts = [:]
             lastRefreshAt = .now
             detailGeneration &+= 1
             selectedTorrentDetail = nil
@@ -270,6 +278,22 @@ public final class TreManaModel {
         } catch {
             guard connectionGeneration == generation else { return }
             errorMessage = error.localizedDescription
+        }
+    }
+
+    public func refreshSwarm() async {
+        guard let client, !isRefreshingSwarm, !isBusy else { return }
+        let ticket = connectionGeneration
+        isRefreshingSwarm = true
+        defer {
+            if connectionGeneration == ticket { isRefreshingSwarm = false }
+        }
+        do {
+            let counts = try await client.torrentSwarm()
+            guard connectionGeneration == ticket else { return }
+            swarmCounts = counts
+        } catch {
+            // Supplementary tracker data must never interrupt torrent controls.
         }
     }
 
@@ -419,6 +443,8 @@ public final class TreManaModel {
         client = nil
         server = nil
         torrents = []
+        swarmCounts = [:]
+        isRefreshingSwarm = false
         lastRefreshAt = nil
         detailGeneration &+= 1
         selectedTorrentDetail = nil
