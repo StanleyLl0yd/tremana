@@ -70,7 +70,7 @@ struct TorrentStatusCell: View {
     }
 
     var body: some View {
-        Label(label, systemImage: iconName)
+        Label(LocalizedStringKey(label), systemImage: iconName)
             .font(.subheadline)
             .foregroundStyle(
                 backgroundProminence == .increased

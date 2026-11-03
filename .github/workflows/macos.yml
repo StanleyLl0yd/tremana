@@ -33,6 +33,8 @@ jobs:
           swift --version
       - name: Package manifest
         run: swift package dump-package > /dev/null
+      - name: Verify translation dictionaries
+        run: python3 scripts/validate-localizations.py
       - name: Unit tests
         run: swift test --parallel
       - name: Build release application
@@ -43,6 +45,10 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/TreMana.app/Contents/Info.plist | grep -Fx 'com.sl.tremana'
           /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' dist/TreMana.app/Contents/Info.plist | grep -Fx '27.0'
           test -x dist/TreMana.app/Contents/MacOS/TreMana
+          for locale in en ru; do
+            test -s "dist/TreMana.app/Contents/Resources/$locale.lproj/Localizable.strings"
+            plutil -lint "dist/TreMana.app/Contents/Resources/$locale.lproj/Localizable.strings"
+          done
           codesign --verify --strict dist/TreMana.app
       - name: Archive test build
         shell: bash

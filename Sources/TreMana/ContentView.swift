@@ -199,7 +199,7 @@ private struct CommandButton: View {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .medium))
                     .frame(height: 18)
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.caption2.weight(.medium))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -208,8 +208,8 @@ private struct CommandButton: View {
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.borderless)
-        .help(title)
-        .accessibilityLabel(title)
+        .help(LocalizedStringKey(title))
+        .accessibilityLabel(LocalizedStringKey(title))
     }
 }
 
@@ -434,13 +434,19 @@ private struct TorrentTableView: View {
                 if let footerMessage {
                     Image(systemName: isError ? "exclamationmark.circle.fill" : "checkmark.circle")
                         .foregroundStyle(isError ? Color.red : Color.secondary)
-                    Text(footerMessage)
+                    Group {
+                        if footerMessage == "Connection remembered securely" {
+                            Text("Connection remembered securely")
+                        } else {
+                            Text(footerMessage)
+                        }
+                    }
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(isError ? Color.red : Color.secondary)
                         .help(footerMessage)
                 } else {
-                    Label(model.isBusy ? "Applying…" : model.isRefreshing ? "Syncing…" : "Connected",
+                    Label(LocalizedStringKey(model.isBusy ? "Applying…" : model.isRefreshing ? "Syncing…" : "Connected"),
                           systemImage: "checkmark.circle")
                         .foregroundStyle(.secondary)
                 }

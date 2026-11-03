@@ -3,12 +3,20 @@ import TreManaCore
 
 struct RefreshSettingsView: View {
     @AppStorage(AppearancePreference.key) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(LanguagePreference.storageKey) private var preferredLanguage = LanguagePreference.automatic
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
 
     var body: some View {
         Form {
+            Section("Language") {
+                Picker("Interface language", selection: $preferredLanguage) {
+                    Text("System (automatic)").tag(LanguagePreference.automatic)
+                    Text("English").tag("en")
+                    Text("Русский").tag("ru")
+                }
+            }
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) {
                     Text("System").tag(AppearanceMode.system.rawValue)
@@ -56,6 +64,6 @@ struct RefreshSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 490, height: 390)
+        .frame(width: 490, height: 450)
     }
 }

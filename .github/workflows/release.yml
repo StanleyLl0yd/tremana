@@ -65,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           swift package dump-package >/dev/null
+          python3 scripts/validate-localizations.py
           swift test --parallel
 
       - name: Package exact version
@@ -77,6 +78,10 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" | grep -Fx "$RELEASE_VERSION"
           /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist" | grep -Fx '27.0'
           codesign --verify --strict "$app"
+          for locale in en ru; do
+            test -s "$app/Contents/Resources/$locale.lproj/Localizable.strings"
+            plutil -lint "$app/Contents/Resources/$locale.lproj/Localizable.strings"
+          done
           test -x "$app/Contents/MacOS/TreMana"
           archs="$(lipo -archs "$app/Contents/MacOS/TreMana")"
           [[ "$archs" == "arm64" ]] || {
