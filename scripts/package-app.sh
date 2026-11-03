@@ -10,6 +10,8 @@ APP="$ROOT/dist/TreMana.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/TreMana"
+printf 'TreMana executable before strip: %s bytes\n' "$(stat -f '%z' "$APP/Contents/MacOS/TreMana")"
+strip -x "$APP/Contents/MacOS/TreMana"
 cp "$ROOT/Config/Info.plist" "$APP/Contents/Info.plist"
 mkdir -p "$APP/Contents/Resources"
 for locale_dir in "$ROOT"/Sources/TreMana/Resources/*.lproj; do
