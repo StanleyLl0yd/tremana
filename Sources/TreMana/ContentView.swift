@@ -103,6 +103,47 @@ private struct ConnectionView: View {
         @Bindable var form = model
 
         Form {
+            Section("Saved Profiles") {
+                Picker("Profile", selection: $form.selectedProfileID) {
+                    Text("Custom connection").tag(nil as UUID?)
+                    ForEach(model.savedProfiles) { profile in
+                        Text(profile.name).tag(Optional(profile.id))
+                    }
+                }
+                .onChange(of: model.selectedProfileID) { _, id in
+                    Task { await model.chooseProfile(id) }
+                }
+                .disabled(model.isBusy || model.profilesBusy)
+
+                TextField("Profile name", text: $form.profileName)
+                Toggle("Remember password in Keychain", isOn: $form.rememberPassword)
+
+                HStack {
+                    Button("Save Profile") {
+                        Task { await model.saveCurrentProfile() }
+                    }
+                    .disabled(model.profilesBusy || model.isBusy)
+
+                    Button("Delete Profile") {
+                        Task { await model.deleteSelectedProfile() }
+                    }
+                    .disabled(
+                        model.selectedProfileID == nil ||
+                        model.profilesBusy || model.isBusy
+                    )
+                }
+
+                if model.rememberPassword && model.password.isEmpty {
+                    Text("A saved Keychain password is used only when the server address and username match the saved profile.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let profileError = model.profileErrorMessage {
+                    Text(profileError)
+                        .foregroundStyle(.red)
+                }
+            }
+
             Section("Transmission RPC") {
                 TextField("Server URL", text: $form.rpcURL)
                     .textContentType(.URL)
@@ -117,7 +158,7 @@ private struct ConnectionView: View {
                     Task { await model.connect() }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.isBusy)
+                .disabled(model.isBusy || model.profilesBusy)
             }
             if let message = model.errorMessage {
                 Text(message)
@@ -127,6 +168,7 @@ private struct ConnectionView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Connect to Transmission")
+        .task { await model.reloadProfiles() }
     }
 }
 

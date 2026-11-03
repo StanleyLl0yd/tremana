@@ -4,6 +4,42 @@ import Testing
 
 @Suite("Connection lifecycle")
 struct TreManaModelTests {
+    @Test @MainActor func keychainPasswordCannotLeakToEditedServer() async throws {
+        let suiteName = "TreMana.Profiles.Model.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let profiles = UserDefaultsProfileStore(
+            suiteName: suiteName, passwords: MemoryPasswords()
+        )
+        let profile = fixtureProfile()
+        try await profiles.save(profile, password: .replace("secret-password"))
+
+        let remote = ControlledRPC(hold: .none, torrents: [])
+        let capture = ConnectionCapture()
+        let model = TreManaModel(
+            makeClient: { connection in
+                capture.connection = connection
+                return remote
+            },
+            profileStore: profiles
+        )
+
+        await model.reloadProfiles()
+        await model.chooseProfile(profile.id)
+        #expect(model.rememberPassword)
+        #expect(model.password.isEmpty)
+
+        await model.connect()
+        #expect(capture.connection?.credentials?.password == "secret-password")
+        model.disconnect()
+
+        model.rpcURL = "https://untrusted.example/transmission/rpc"
+        await model.connect()
+        #expect(capture.connection?.url.host == "untrusted.example")
+        #expect(capture.connection?.credentials?.password == "")
+    }
+
     @Test @MainActor func disconnectWhileNegotiatingDoesNotReconnect() async {
         let remote = ControlledRPC(hold: .session, torrents: [fixtureTorrent(1)])
         let model = TreManaModel(makeClient: { _ in remote })
@@ -270,4 +306,9 @@ private actor ControlledRPC: TransmissionRPCProviding {
         actionContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
         actionContinuation = nil
     }
+}
+
+@MainActor
+private final class ConnectionCapture {
+    var connection: TransmissionConnection?
 }
