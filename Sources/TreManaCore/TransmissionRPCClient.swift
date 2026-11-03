@@ -10,6 +10,9 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
     case missingArguments
     case unsupportedRPCVersion(Int)
     case invalidTorrentSelection
+    case invalidMagnetLink
+    case invalidTorrentMetainfo
+    case invalidTorrentAddReply
 
     public var errorDescription: String? {
         switch self {
@@ -31,6 +34,12 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
             "RPC version \(version) is not yet supported. TreMana currently supports RPC 16 and 17."
         case .invalidTorrentSelection:
             "Select one or more valid torrents. Refusing an operation that could affect all torrents."
+        case .invalidMagnetLink:
+            "Enter a valid BitTorrent v1 magnet link with an info hash."
+        case .invalidTorrentMetainfo:
+            "The .torrent file must contain between 1 byte and 16 MiB of data."
+        case .invalidTorrentAddReply:
+            "Transmission returned success without identifying the added or existing torrent."
         }
     }
 }
@@ -124,6 +133,62 @@ public actor TransmissionRPCClient {
             action.rawValue,
             arguments: ["ids": .array(ids.map { .integer($0) })]
         )
+    }
+
+    public func addTorrent(
+        _ source: TorrentAddSource,
+        startImmediately: Bool
+    ) async throws -> TorrentAddOutcome {
+        var arguments: [String: RPCValue] = [
+            "paused": .boolean(!startImmediately)
+        ]
+
+        switch source {
+        case .magnet(let input):
+            let magnet = input.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard magnet.utf8.count <= 16_384,
+                  let components = URLComponents(string: magnet),
+                  components.scheme?.lowercased() == "magnet",
+                  components.queryItems?.contains(where: { item in
+                      guard item.name.lowercased() == "xt",
+                            let value = item.value,
+                            value.lowercased().hasPrefix("urn:btih:") else {
+                          return false
+                      }
+                      let hash = String(value.dropFirst(9))
+                      if hash.count == 40 {
+                          return hash.allSatisfy {
+                              "0123456789abcdefABCDEF".contains($0)
+                          }
+                      }
+                      if hash.count == 32 {
+                          return hash.uppercased().allSatisfy {
+                              "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".contains($0)
+                          }
+                      }
+                      return false
+                  }) == true else {
+                throw TransmissionRPCError.invalidMagnetLink
+            }
+            arguments["filename"] = .string(magnet)
+
+        case .metainfo(let data):
+            guard !data.isEmpty, data.count <= 16 * 1024 * 1024 else {
+                throw TransmissionRPCError.invalidTorrentMetainfo
+            }
+            arguments["metainfo"] = .string(data.base64EncodedString())
+        }
+
+        let response: TorrentAddArguments = try await call(
+            "torrent-add", arguments: arguments
+        )
+        if let added = response.added {
+            return .added(added)
+        }
+        if let duplicate = response.duplicate {
+            return .duplicate(duplicate)
+        }
+        throw TransmissionRPCError.invalidTorrentAddReply
     }
 
     private func call<Value: Decodable>(

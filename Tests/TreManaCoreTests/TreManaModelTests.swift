@@ -190,6 +190,16 @@ private actor ControlledRPC: TransmissionRPCProviding {
         self.contents = torrents
     }
 
+    func addTorrent(
+        _ source: TorrentAddSource,
+        startImmediately: Bool
+    ) async throws -> TorrentAddOutcome {
+        .added(TransmissionAddedTorrent(
+            id: 33, name: "Added via test",
+            hashString: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ))
+    }
+
     func perform(_ action: TorrentAction, ids: [Int]) async throws {
         recordedActions.append((method: action.rawValue, ids: ids))
         if hold == .action {
