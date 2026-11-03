@@ -376,7 +376,10 @@ public final class TreManaModel {
     }
 
     public func perform(_ action: TorrentAction) async {
-        await perform(action, ids: selectedTorrentIDs.sorted())
+        // Toolbar selection historically filters rows removed by a refresh.
+        // Context menu actions supply exact IDs and are validated strictly.
+        let existing = Set(torrents.map(\.id))
+        await perform(action, ids: selectedTorrentIDs.intersection(existing).sorted())
     }
 
     public func perform(_ action: TorrentAction, ids requested: [Int]) async {
