@@ -14,8 +14,7 @@ struct TreManaApp: App {
         .defaultSize(width: 1140, height: 740)
 
         Settings {
-            Text("Configure your Transmission server in the main window.")
-                .padding(28)
+            RefreshSettingsView()
         }
     }
 }
