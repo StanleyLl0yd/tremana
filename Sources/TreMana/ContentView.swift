@@ -64,14 +64,14 @@ struct ContentView: View {
                         .tag(TorrentFilter.seeding)
                 }
                 .listStyle(.sidebar)
-                if let testVersion = Bundle.main.object(
-                    forInfoDictionaryKey: "TreManaTestVersion"
+                if let version = Bundle.main.object(
+                    forInfoDictionaryKey: "CFBundleShortVersionString"
                 ) as? String {
                     HStack {
-                        Text(testVersion)
+                        Text(version)
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .accessibilityLabel("TreMana version \(testVersion)")
+                            .accessibilityLabel("TreMana version \(version)")
                         Spacer()
                     }
                     .padding(.horizontal, 14)
