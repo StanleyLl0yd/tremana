@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF" == "refs/heads/release/test-v0.2.0" ]] || exit 1
+          [[ "$GITHUB_REF" == "refs/heads/release/v0.2.0" ]] || exit 1
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
           [[ "$version" == "0.2.0" ]] || exit 1
           preview="$(/usr/libexec/PlistBuddy -c 'Print :TreManaTestVersion' Config/Info.plist)"
