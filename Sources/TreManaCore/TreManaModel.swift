@@ -720,6 +720,13 @@ public final class TreManaModel {
             guard connectionGeneration == ticket else { return }
             torrents = refreshed
             selectedTorrentIDs.formIntersection(Set(refreshed.map(\.id)))
+            let removedIDs = Set(ids).subtracting(Set(refreshed.map(\.id)))
+            if !removedIDs.isEmpty {
+                try? strictQueueController.forgetRemovedTorrents(
+                    endpoint: rpcURL, ids: removedIDs
+                )
+                strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            }
             noticeMessage = deleteLocalData
                 ? "Removed torrent(s) and requested deletion of server data"
                 : "Removed torrent(s) from Transmission; files kept"
