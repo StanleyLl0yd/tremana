@@ -15,6 +15,8 @@ concurrency:
 
 jobs:
   release:
+    if: github.actor == 'StanleyLl0yd' && github.triggering_actor == 'StanleyLl0yd'
+    environment: tremana-signing
     runs-on: xcode-27
     timeout-minutes: 40
     steps:
@@ -60,6 +62,15 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Validate signing bootstrap syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/setup-signing.sh
+          bash -n scripts/import-signing-identity.sh
+          bash -n scripts/verify-signing-identity.sh
+          bash -n scripts/package-app.sh
+
       - name: Compile and test exact commit
         shell: bash
         run: |
@@ -67,6 +78,14 @@ jobs:
           swift package dump-package >/dev/null
           python3 scripts/validate-localizations.py
           swift test --parallel
+
+      - name: Import pinned TreMana signing identity
+        shell: bash
+        env:
+          TREMANA_CERT_P12_BASE64: ${{ secrets.TREMANA_CERT_P12_BASE64 }}
+          TREMANA_CERT_PASSWORD: ${{ secrets.TREMANA_CERT_PASSWORD }}
+          TREMANA_CERT_SHA256: ${{ vars.TREMANA_CERT_SHA256 }}
+        run: bash scripts/import-signing-identity.sh
 
       - name: Package exact version
         shell: bash
@@ -96,6 +115,10 @@ jobs:
           )
           echo "ASSET_PATH=dist/$asset" >> "$GITHUB_ENV"
           echo "CHECKSUM_PATH=dist/$asset.sha256" >> "$GITHUB_ENV"
+
+      - name: Verify stable Code Signing requirement
+        shell: bash
+        run: bash scripts/verify-signing-identity.sh
 
       - name: Create tag and publish release for tested SHA
         env:
@@ -137,3 +160,20 @@ jobs:
           cmp "$ASSET_PATH" "$RUNNER_TEMP/tremana-release-verify/$(basename "$ASSET_PATH")"
           printf 'Direct ZIP: https://github.com/%s/releases/download/%s/%s\n' \
             "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$(basename "$ASSET_PATH")" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Destroy ephemeral signing identity
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${TREMANA_SIGNING_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$TREMANA_SIGNING_KEYCHAIN" || true
+          fi
+          if [[ -n "${TREMANA_SIGNING_P12:-}" ]]; then
+            rm -f "$TREMANA_SIGNING_P12"
+          fi
+          if [[ -n "${TREMANA_SIGNING_CERT:-}" ]]; then
+            rm -f "$TREMANA_SIGNING_CERT"
+          fi
+          rm -f "$RUNNER_TEMP/tremana-certificate.txt" "$RUNNER_TEMP/tremana-identities.txt"
+

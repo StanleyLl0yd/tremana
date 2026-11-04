@@ -27,9 +27,6 @@ struct TorrentInspectorView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Text("TORRENT DETAILS")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
                 Picker("Torrent details", selection: $selectedTab) {
                     ForEach(InspectorTab.allCases) { tab in
                         Text(LocalizedStringKey(tab.rawValue)).tag(tab)
@@ -181,90 +178,130 @@ struct TorrentInspectorView: View {
         return VStack(spacing: 0) {
             if !entries.isEmpty {
                 HStack(spacing: 8) {
-                    Text("Choose files to download")
-                        .font(.caption.weight(.semibold))
+                    Text("Files to download")
+                        .font(.subheadline.weight(.medium))
                     Spacer(minLength: 0)
                     if selectionAvailable {
                         Text("\(wantedCount) / \(entries.count)")
-                            .monospacedDigit()
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    if model.strictQueuePendingIDs.contains(detail.id) {
+                        Label("Ordered download pending", systemImage: "clock")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else if model.strictQueueTorrentIDs.contains(detail.id) {
+                        Label("Ordered download active", systemImage: "list.number")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
+                .padding(.horizontal, 15)
+                .padding(.top, 11)
                 Text("File selection does not delete previously downloaded data.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 7)
-                Divider()
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 6)
             }
-
             if entries.isEmpty {
                 placeholder("No file metadata available", symbol: "doc")
             } else {
                 List {
                     ForEach(entries.indices, id: \.self) { index in
                         let file = entries[index]
-                        let wanted = selectionAvailable ? stats?[index].wanted : nil
-                        HStack(spacing: 12) {
-                            if let stats, selectionAvailable {
-                                Toggle(isOn: Binding(
-                                    get: {
-                                        guard let current = model.selectedTorrentDetail,
-                                              current.id == detail.id,
-                                              let currentStats = current.fileStats,
-                                              currentStats.indices.contains(index) else {
-                                            return stats[index].wanted
-                                        }
-                                        return currentStats[index].wanted
-                                    },
-                                    set: { newValue in
-                                        Task {
-                                            await model.setFileWanted(
-                                                torrentID: detail.id,
-                                                fileIndex: index,
-                                                wanted: newValue,
-                                                expectedWanted: stats[index].wanted
-                                            )
-                                        }
-                                    }
-                                )) {
-                                    Text(file.name)
-                                }
-                                .toggleStyle(.checkbox)
-                                .labelsHidden()
-                                .disabled(model.isBusy || (stats[index].wanted && wantedCount == 1))
-                                .help(LocalizedStringKey(
-                                    stats[index].wanted && wantedCount == 1
-                                        ? "At least one file must remain selected for download"
-                                        : "Include this file in the download"
-                                ))
-                                .accessibilityLabel(Text(file.name))
-                            } else {
-                                Image(systemName: "questionmark.circle")
+                        let fileStats = selectionAvailable ? stats?[index] : nil
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack(spacing: 9) {
+                                Image(systemName: "doc")
                                     .foregroundStyle(.secondary)
-                                    .help("File selection unavailable")
-                                    .accessibilityHidden(true)
-                            }
-                            VStack(alignment: .leading, spacing: 5) {
                                 Text(file.name)
-                                    .lineLimit(1)
+                                    .font(.subheadline)
+                                    .lineLimit(2)
                                     .textSelection(.enabled)
-                                ProgressView(value: completion(file.bytesCompleted, file.length))
-                                    .progressViewStyle(.linear)
+                                Spacer(minLength: 8)
+                                Text(size(file.bytesCompleted) + " / " + size(file.length))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
                             }
-                            Spacer(minLength: 8)
-                            Text(size(file.bytesCompleted))
-                                .monospacedDigit()
-                            Text("/ " + size(file.length))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                            Text(LocalizedStringKey(wanted.map { $0 ? "Wanted" : "Skipped" } ?? "Unknown"))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 64, alignment: .trailing)
+
+                            ProgressView(value: completion(file.bytesCompleted, file.length))
+                                .progressViewStyle(.linear)
+
+                            if let fileStats {
+                                HStack(spacing: 15) {
+                                    Toggle("Download file", isOn: Binding(
+                                        get: {
+                                            guard let current = model.selectedTorrentDetail,
+                                                  current.id == detail.id,
+                                                  let currentStats = current.fileStats,
+                                                  currentStats.indices.contains(index) else {
+                                                return fileStats.wanted
+                                            }
+                                            return currentStats[index].wanted
+                                        },
+                                        set: { next in
+                                            Task {
+                                                await model.setFileWanted(
+                                                    torrentID: detail.id,
+                                                    fileIndex: index,
+                                                    wanted: next,
+                                                    expectedWanted: fileStats.wanted
+                                                )
+                                            }
+                                        }
+                                    ))
+                                    .toggleStyle(.checkbox)
+                                    .disabled(model.isBusy || model.strictQueueTorrentIDs.contains(detail.id) || (fileStats.wanted && wantedCount == 1))
+                                    .help(LocalizedStringKey(
+                                        model.strictQueueTorrentIDs.contains(detail.id)
+                                            ? "Disable ordered downloading before changing file selection"
+                                            : fileStats.wanted && wantedCount == 1
+                                                ? "At least one file must remain selected for download"
+                                                : "Include this file in the download"
+                                    ))
+                                    .accessibilityIdentifier("file.wanted.\(index)")
+
+                                    Picker("Priority", selection: Binding(
+                                        get: {
+                                            guard let current = model.selectedTorrentDetail,
+                                                  current.id == detail.id,
+                                                  let currentStats = current.fileStats,
+                                                  currentStats.indices.contains(index) else {
+                                                return fileStats.priority
+                                            }
+                                            return currentStats[index].priority
+                                        },
+                                        set: { next in
+                                            Task {
+                                                await model.setFilePriority(
+                                                    torrentID: detail.id,
+                                                    fileIndex: index,
+                                                    priority: next,
+                                                    expectedPriority: fileStats.priority
+                                                )
+                                            }
+                                        }
+                                    )) {
+                                        Text("Low").tag(-1)
+                                        Text("Normal").tag(0)
+                                        Text("High").tag(1)
+                                    }
+                                    .pickerStyle(.menu)
+                                    .fixedSize()
+                                    .disabled(model.isBusy)
+                                    .accessibilityIdentifier("file.priority.\(index)")
+                                    Spacer(minLength: 0)
+                                }
+                                .font(.caption)
+                            } else {
+                                Label("File selection unavailable", systemImage: "info.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                        .font(.caption)
+                        .padding(.vertical, 6)
                     }
                 }
                 .listStyle(.plain)

@@ -370,6 +370,37 @@ struct TreManaModelTests {
         #expect(model.selectedTorrentIDs.isEmpty)
     }
 
+    @Test @MainActor func filePriorityConfirmsServerAndRejectsStaleValue() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)], wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        await model.setFilePriority(
+            torrentID: 1, fileIndex: 1, priority: 1, expectedPriority: 0
+        )
+        #expect(await remote.filePriorityCalls().count == 1)
+        #expect(model.selectedTorrentDetail?.fileStats?[1].priority == 1)
+        #expect(model.noticeMessage == "File priority updated")
+
+        await remote.replacePriorityStates([0, -1])
+        await model.setFilePriority(
+            torrentID: 1, fileIndex: 1, priority: 0, expectedPriority: 1
+        )
+        #expect(await remote.filePriorityCalls().count == 1)
+        #expect(model.selectedTorrentDetail?.fileStats?[1].priority == -1)
+        #expect(model.errorMessage == TransmissionRPCError.invalidFilePriority.localizedDescription)
+
+        await model.setFilePriority(
+            torrentID: 1, fileIndex: 1, priority: 5, expectedPriority: -1
+        )
+        #expect(await remote.filePriorityCalls().count == 1)
+    }
+
     @Test @MainActor func fileWantedToggleConfirmsServerAndPreservesLastFile() async {
         let remote = ControlledRPC(
             hold: .none, torrents: [fixtureTorrent(1)], wantedStates: [true, true]
@@ -677,6 +708,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
     let hold: Hold
     let contents: [TransmissionTorrent]
     private var wantedStates: [Bool]?
+    private var priorityStates: [Int]?
+    private var changedPriorities: [(torrentID: Int, fileIndex: Int, priority: Int)] = []
     private var fileNamePrefix = "file_"
     private var fileNameOverrides: [Int: String] = [:]
     private var remoteDownloadDir = "/mnt/downloads"
@@ -705,6 +738,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         self.hold = hold
         self.contents = torrents
         self.wantedStates = wantedStates
+        self.priorityStates = wantedStates.map { Array(repeating: 0, count: $0.count) }
         self.rejectFileChanges = rejectFileChanges
         self.failPostMoveDetail = failPostMoveDetail
     }
@@ -726,6 +760,26 @@ private actor ControlledRPC: TransmissionRPCProviding {
         }
         states[fileIndex] = wanted
         wantedStates = states
+    }
+
+    func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws {
+        changedPriorities.append((torrentID, fileIndex, priority))
+        if rejectFileChanges {
+            throw TransmissionRPCError.serverError("read only")
+        }
+        guard var states = priorityStates, states.indices.contains(fileIndex) else {
+            throw TransmissionRPCError.invalidFilePriority
+        }
+        states[fileIndex] = priority
+        priorityStates = states
+    }
+
+    func filePriorityCalls() -> [(torrentID: Int, fileIndex: Int, priority: Int)] {
+        changedPriorities
+    }
+
+    func replacePriorityStates(_ states: [Int]) {
+        priorityStates = states
     }
 
     func fileSelectionCalls() -> [(torrentID: Int, fileIndex: Int, wanted: Bool)] {
@@ -799,8 +853,12 @@ private actor ControlledRPC: TransmissionRPCProviding {
                 ["name": fileNameOverrides[index] ?? "\(fileNamePrefix)\(index)",
                  "length": 1, "bytesCompleted": 0]
             }
-            let stats: [[String: Any]] = wantedStates.map { wanted in
-                ["wanted": wanted, "priority": 0, "bytesCompleted": 0]
+            let stats: [[String: Any]] = wantedStates.enumerated().map { index, wanted in
+                [
+                    "wanted": wanted,
+                    "priority": priorityStates?[index] ?? 0,
+                    "bytesCompleted": 0
+                ]
             }
             let payload: [String: Any] = [
                 "id": id, "name": "Torrent \(id)", "status": 4,

@@ -7,6 +7,10 @@ public protocol TransmissionRPCProviding: Sendable {
     func torrentSwarm() async throws -> [Int: TorrentSwarmCounts]
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws
+    func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws
+    func setQueueFileSelection(
+        torrentID: Int, wanted: [Int], unwanted: [Int]
+    ) async throws
     func moveTorrent(torrentID: Int, destination: String) async throws
     func renameTorrentPath(torrentID: Int, path: String, name: String) async throws
     func perform(_ action: TorrentAction, ids: [Int]) async throws
@@ -17,6 +21,16 @@ public protocol TransmissionRPCProviding: Sendable {
 
 extension TransmissionRPCProviding {
     public func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws {
+        throw TransmissionRPCError.invalidFileSelection
+    }
+
+    public func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws {
+        throw TransmissionRPCError.invalidFilePriority
+    }
+
+    public func setQueueFileSelection(
+        torrentID: Int, wanted: [Int], unwanted: [Int]
+    ) async throws {
         throw TransmissionRPCError.invalidFileSelection
     }
 
@@ -69,6 +83,8 @@ public final class TreManaModel {
     public private(set) var selectedTorrentDetail: TransmissionTorrentDetail?
     public private(set) var detailErrorMessage: String?
     public private(set) var isLoadingDetail = false
+    public private(set) var strictQueueTorrentIDs: Set<Int> = []
+    public private(set) var strictQueuePendingIDs: Set<Int> = []
 
     @ObservationIgnored
     private let makeClient: @MainActor (TransmissionConnection) -> any TransmissionRPCProviding
@@ -94,6 +110,9 @@ public final class TreManaModel {
     @ObservationIgnored
     private let profileStore: any ConnectionProfileStoring
 
+    @ObservationIgnored
+    private let strictQueueController: StrictFileQueueController
+
     public var isConnected: Bool { server != nil && client != nil }
 
     public var canReuseSavedPassword: Bool {
@@ -110,10 +129,12 @@ public final class TreManaModel {
         makeClient: @escaping @MainActor (TransmissionConnection) -> any TransmissionRPCProviding = {
             TransmissionRPCClient(connection: $0)
         },
-        profileStore: any ConnectionProfileStoring = UserDefaultsProfileStore()
+        profileStore: any ConnectionProfileStoring = UserDefaultsProfileStore(),
+        strictQueueDefaults: UserDefaults = .standard
     ) {
         self.makeClient = makeClient
         self.profileStore = profileStore
+        self.strictQueueController = StrictFileQueueController(defaults: strictQueueDefaults)
     }
 
     public func reloadProfiles() async {
@@ -259,6 +280,8 @@ public final class TreManaModel {
             selectedTorrentIDs = []
             noticeMessage = nil
             password = ""
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: requestedURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: requestedURL)
 
             guard shouldRemember else { return }
             // Never reuse an existing profile's credential on a changed endpoint.
@@ -378,6 +401,10 @@ public final class TreManaModel {
         expectedWanted: Bool
     ) async {
         guard let client, !isBusy else { return }
+        guard !strictQueueTorrentIDs.contains(torrentID) else {
+            errorMessage = TransmissionRPCError.fileSelectionChanged.localizedDescription
+            return
+        }
         guard torrentID > 0,
               selectedTorrentIDs == Set([torrentID]),
               torrents.contains(where: { $0.id == torrentID }),
@@ -414,6 +441,9 @@ public final class TreManaModel {
             guard connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]) else { return }
             guard let current,
+                  let displayedHash = displayed.hashString,
+                  !displayedHash.isEmpty,
+                  current.hashString == displayedHash,
                   let files = current.files,
                   let stats = current.fileStats,
                   files.count == stats.count,
@@ -460,6 +490,147 @@ public final class TreManaModel {
             if selectedTorrentDetail == nil {
                 detailErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    public func setFilePriority(
+        torrentID: Int,
+        fileIndex: Int,
+        priority: Int,
+        expectedPriority: Int
+    ) async {
+        guard let client, !isBusy else { return }
+        guard (-1...1).contains(priority),
+              (-1...1).contains(expectedPriority),
+              priority != expectedPriority,
+              torrentID > 0,
+              selectedTorrentIDs == Set([torrentID]),
+              torrents.contains(where: { $0.id == torrentID }),
+              let displayed = selectedTorrentDetail,
+              displayed.id == torrentID,
+              let displayedFiles = displayed.files,
+              let displayedStats = displayed.fileStats,
+              displayedFiles.count == displayedStats.count,
+              displayedFiles.indices.contains(fileIndex),
+              displayedStats[fileIndex].priority == expectedPriority else {
+            errorMessage = TransmissionRPCError.invalidFilePriority.localizedDescription
+            return
+        }
+
+        mutationGeneration &+= 1
+        detailGeneration &+= 1
+        isLoadingDetail = false
+        detailErrorMessage = nil
+        let ticket = connectionGeneration
+        isBusy = true
+        editingFileSelectionForID = torrentID
+        defer {
+            if connectionGeneration == ticket {
+                editingFileSelectionForID = nil
+                isBusy = false
+            }
+        }
+
+        do {
+            let current = try await client.torrentDetails(id: torrentID)
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            guard let current,
+                  let displayedHash = displayed.hashString,
+                  !displayedHash.isEmpty,
+                  current.hashString == displayedHash,
+                  let files = current.files,
+                  let stats = current.fileStats,
+                  files.count == stats.count,
+                  files.count == displayedFiles.count,
+                  files.indices.contains(fileIndex),
+                  files[fileIndex].name == displayedFiles[fileIndex].name,
+                  files[fileIndex].length == displayedFiles[fileIndex].length else {
+                throw TransmissionRPCError.invalidFileSelection
+            }
+            guard stats[fileIndex].priority == expectedPriority else {
+                selectedTorrentDetail = current
+                throw TransmissionRPCError.invalidFilePriority
+            }
+
+            try await client.setFilePriority(
+                torrentID: torrentID, fileIndex: fileIndex, priority: priority
+            )
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+
+            selectedTorrentDetail = nil
+            let refreshed = try await client.torrentDetails(id: torrentID)
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            guard let refreshed,
+                  let verified = refreshed.fileStats,
+                  verified.indices.contains(fileIndex) else {
+                throw TransmissionRPCError.invalidFileSelection
+            }
+            selectedTorrentDetail = refreshed
+            guard verified[fileIndex].priority == priority else {
+                throw TransmissionRPCError.invalidFilePriority
+            }
+            errorMessage = nil
+            noticeMessage = "File priority updated"
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            errorMessage = error.localizedDescription
+            noticeMessage = nil
+            if selectedTorrentDetail == nil {
+                detailErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    public func setStrictFileQueue(torrentID: Int, enabled: Bool) async {
+        guard let client, !isBusy, torrentID > 0,
+              torrents.contains(where: { $0.id == torrentID }) else { return }
+        let ticket = connectionGeneration
+        mutationGeneration &+= 1
+        isBusy = true
+        defer { if connectionGeneration == ticket { isBusy = false } }
+        do {
+            try await strictQueueController.setEnabled(
+                enabled, torrentID: torrentID, endpoint: rpcURL, client: client
+            )
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
+            errorMessage = nil
+            noticeMessage = enabled ? "Strict file queue enabled" : "Strict file queue disabled"
+            if selectedTorrentIDs == Set([torrentID]) {
+                await loadSelectedTorrentDetails()
+            }
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func advanceStrictFileQueues() async {
+        guard let client, !isBusy, !strictQueueTorrentIDs.isEmpty else { return }
+        let ticket = connectionGeneration
+        mutationGeneration &+= 1
+        isBusy = true
+        defer { if connectionGeneration == ticket { isBusy = false } }
+        do {
+            try await strictQueueController.advance(endpoint: rpcURL, client: client)
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
+            if selectedTorrentIDs.count == 1 {
+                await loadSelectedTorrentDetails()
+            }
+            errorMessage = nil
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
+            errorMessage = "Strict file queue paused: " + error.localizedDescription
         }
     }
 
@@ -560,6 +731,14 @@ public final class TreManaModel {
             guard connectionGeneration == ticket else { return }
             torrents = refreshed
             selectedTorrentIDs.formIntersection(Set(refreshed.map(\.id)))
+            let removedIDs = Set(ids).subtracting(Set(refreshed.map(\.id)))
+            if !removedIDs.isEmpty {
+                try? strictQueueController.forgetRemovedTorrents(
+                    endpoint: rpcURL, ids: removedIDs
+                )
+                strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
+            }
             noticeMessage = deleteLocalData
                 ? "Removed torrent(s) and requested deletion of server data"
                 : "Removed torrent(s) from Transmission; files kept"
@@ -825,6 +1004,8 @@ public final class TreManaModel {
         errorMessage = nil
         noticeMessage = nil
         password = ""
+        strictQueueTorrentIDs = []
+        strictQueuePendingIDs = []
         isBusy = false
         isRefreshing = false
         mutationGeneration &+= 1
