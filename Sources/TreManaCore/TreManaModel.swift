@@ -602,6 +602,27 @@ public final class TreManaModel {
         }
     }
 
+    public func advanceStrictFileQueues() async {
+        guard let client, !isBusy, !strictQueueTorrentIDs.isEmpty else { return }
+        let ticket = connectionGeneration
+        mutationGeneration &+= 1
+        isBusy = true
+        defer { if connectionGeneration == ticket { isBusy = false } }
+        do {
+            try await strictQueueController.advance(endpoint: rpcURL, client: client)
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            if selectedTorrentIDs.count == 1 {
+                await loadSelectedTorrentDetails()
+            }
+            errorMessage = nil
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            errorMessage = "Strict file queue paused: " + error.localizedDescription
+        }
+    }
+
     public func refresh() async {
         // A passive poll may not block an explicit user action.
         guard let client, !isBusy, !isRefreshing else { return }
