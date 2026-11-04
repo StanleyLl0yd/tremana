@@ -75,6 +75,15 @@ jobs:
           TREMANA_CERT_PASSWORD: ${{ secrets.TREMANA_CERT_PASSWORD }}
         run: bash scripts/import-signing-identity.sh
 
+      - name: Require persistent signing certificate for publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${TREMANA_CODESIGN_IDENTITY:-}" =~ ^[A-Fa-f0-9]{40}$ ]] || {
+            echo "TreMana release requires a stable Code Signing identity. Configure TREMANA_CERT_P12_BASE64 and TREMANA_CERT_PASSWORD in GitHub Actions Secrets." >&2
+            exit 1
+          }
+
       - name: Package exact version
         shell: bash
         run: |
