@@ -16,6 +16,12 @@ public final class StrictFileQueueController {
         }
     }
 
+    public func forgetRemovedTorrents(endpoint: String, ids: Set<Int>) throws {
+        try save(records.filter {
+            $0.endpoint != endpoint || !ids.contains($0.torrentID)
+        })
+    }
+
     public func enabledTorrentIDs(endpoint: String) -> Set<Int> {
         Set(records.filter { $0.endpoint == endpoint }.map(\.torrentID))
     }
