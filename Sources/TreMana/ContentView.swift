@@ -68,10 +68,10 @@ struct ContentView: View {
                     forInfoDictionaryKey: "TreManaTestVersion"
                 ) as? String {
                     HStack {
-                        Text("v\(testVersion)")
+                        Text(testVersion)
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .accessibilityLabel("TreMana test version \(testVersion)")
+                            .accessibilityLabel("TreMana version \(testVersion)")
                         Spacer()
                     }
                     .padding(.horizontal, 14)

@@ -1,15 +1,15 @@
-name: TreMana preview v0.2.0-beta.1
+name: TreMana 0.2.0 test release
 
 on:
   push:
     branches:
-      - release/test-v0.2.0-beta.1
+      - release/v0.2.0
 
 permissions:
   contents: write
 
 concurrency:
-  group: tremana-preview-v0.2.0-beta.1
+  group: tremana-preview-v0.2.0
   cancel-in-progress: false
 
 jobs:
@@ -26,14 +26,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF" == "refs/heads/release/test-v0.2.0-beta.1" ]] || exit 1
+          [[ "$GITHUB_REF" == "refs/heads/release/test-v0.2.0" ]] || exit 1
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
           [[ "$version" == "0.2.0" ]] || exit 1
           preview="$(/usr/libexec/PlistBuddy -c 'Print :TreManaTestVersion' Config/Info.plist)"
-          [[ "$preview" == "0.2.0-beta.1" ]] || exit 1
-          test -s docs/releases/v0.2.0-beta.1.md
-          echo 'RELEASE_TAG=v0.2.0-beta.1' >> "$GITHUB_ENV"
-          echo 'RELEASE_VERSION=0.2.0-beta.1' >> "$GITHUB_ENV"
+          [[ "$preview" == "0.2.0" ]] || exit 1
+          test -s docs/releases/v0.2.0.md
+          echo 'RELEASE_TAG=v0.2.0' >> "$GITHUB_ENV"
+          echo 'RELEASE_VERSION=0.2.0' >> "$GITHUB_ENV"
 
       - name: Select Xcode 27
         shell: bash
@@ -110,7 +110,7 @@ jobs:
           fi
           gh release create "$RELEASE_TAG" "$ASSET_PATH" "$CHECKSUM_PATH" \
             --verify-tag --prerelease \
-            --title "TreMana $RELEASE_VERSION (test preview)" \
+            --title "TreMana $RELEASE_VERSION (test build)" \
             --notes-file "docs/releases/$RELEASE_TAG.md"
 
       - name: Verify uploaded archive and prerelease metadata
@@ -120,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName,assets \
-            --jq 'if (.isDraft == false and .isPrerelease == true and .tagName == "v0.2.0-beta.1" and (.assets | length) == 2) then "PREVIEW VERIFIED" else error("Invalid release metadata") end'
+            --jq 'if (.isDraft == false and .isPrerelease == true and .tagName == "v0.2.0" and (.assets | length) == 2) then "PREVIEW VERIFIED" else error("Invalid release metadata") end'
           mkdir -p "$RUNNER_TEMP/tremana-preview-verify"
           gh release download "$RELEASE_TAG" \
             --pattern "$(basename "$ASSET_PATH")" \
