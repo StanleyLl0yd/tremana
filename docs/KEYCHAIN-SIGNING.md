@@ -73,6 +73,10 @@ Protect the archive with a strong unique password (at least 24 bytes).
   on an unprotected branch.**
 - The identity is imported into a temporary macOS runner Keychain and
   validated against the SHA-256 fingerprint, expiry and Code Signing EKU.
+  The runner does not modify macOS user/system certificate trust settings:
+  adding a trusted root can require interactive authorization and hang CI.
+  Keychain commands have bounded timeouts; signing and the stable designated
+  requirement are validated separately.
   Signing fails closed if secrets are absent or inconsistent.
 - `scripts/verify-signing-identity.sh` verifies the actual app signature and
   its Designated Requirement. It independently re-signs a copy with a changed
