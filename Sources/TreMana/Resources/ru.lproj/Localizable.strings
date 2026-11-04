@@ -194,3 +194,17 @@
 "Icons and labels" = "Значки и подписи";
 "Labels only" = "Только подписи";
 "Download file" = "Скачивать";
+"Strict file queue" = "Строгая очередь файлов";
+"Download files in order…" = "Скачивать файлы по порядку…";
+"Stop downloading files in order…" = "Отключить очередь файлов…";
+"Download pieces in order…" = "Скачивать блоки по порядку…";
+"Enable ordered file downloading" = "Включить очередь файлов";
+"Disable ordered file downloading" = "Отключить очередь файлов";
+"When enabled, only the current file downloads. The next file starts after completion while TreMana is connected. If the Mac sleeps or the app closes, the next file waits." = "Одновременно скачивается только текущий файл. Следующий начнёт загружаться после его завершения, когда TreMana подключена. Если Mac спит или приложение закрыто, следующий файл будет ждать.";
+"Sequential pieces unavailable" = "Последовательные блоки недоступны";
+"Transmission 3.00 / RPC 16 cannot schedule pieces in order. No setting was changed." = "Transmission 3.00 / RPC 16 не умеет скачивать блоки строго по порядку. Настройки не изменены.";
+"Ordered download active" = "Очередь файлов включена";
+"Strict file queue enabled" = "Очередь файлов включена";
+"Strict file queue disabled" = "Очередь файлов отключена";
+"Disable ordered downloading before changing file selection" = "Чтобы изменить выбор файлов, сначала отключите очередь";
+"OK" = "ОК";
