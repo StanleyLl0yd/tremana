@@ -180,3 +180,5 @@
 "Transmission will move files on the Keenetic server. This may take time and cannot be undone by TreMana." = "Transmission will move files on the Keenetic server. This may take time and cannot be undone by TreMana.";
 "Transmission will rename this file or folder on the server. Other clients may need to refresh their file lists." = "Transmission will rename this file or folder on the server. Other clients may need to refresh their file lists.";
 "Transmission did not confirm the operation." = "Transmission did not confirm the operation.";
+"Server move confirmed" = "Server move confirmed";
+"Server path rename confirmed" = "Server path rename confirmed";

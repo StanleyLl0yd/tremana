@@ -596,6 +596,31 @@ struct TreManaModelTests {
         #expect(model.errorMessage == TransmissionRPCError.remoteStateChanged.localizedDescription)
     }
 
+
+    @Test @MainActor func disconnectDuringRemoteMoveDoesNotRestoreOldUI() async throws {
+        let remote = ControlledRPC(hold: .remoteMove, torrents: [fixtureTorrent(1)])
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        let snapshot = try #require(await model.remoteActionDetail(for: 1))
+
+        let task = Task {
+            await model.moveTorrent(to: "/mnt/other", expected: snapshot)
+        }
+        await remote.waitForHeldCall()
+        model.disconnect()
+        await remote.resumeHeldCall()
+        let success = await task.value
+
+        #expect(!success)
+        #expect(!model.isConnected)
+        #expect(model.selectedTorrentDetail == nil)
+        #expect(model.noticeMessage == nil)
+        #expect(model.errorMessage == nil)
+        #expect(!model.isBusy)
+        #expect(await remote.remoteMoveCalls().count == 1)
+    }
+
     @Test @MainActor func staleNetworkErrorDoesNotAppearAfterDisconnect() async {
         let remote = ControlledRPC(hold: .session, torrents: [])
         let model = TreManaModel(makeClient: { _ in remote })
@@ -627,6 +652,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         case refresh
         case action
         case fileAction
+        case remoteMove
         case detail
     }
 
@@ -644,6 +670,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private var recordedActions: [(method: String, ids: [Int])] = []
     private var actionContinuation: CheckedContinuation<Void, Error>?
     private var fileActionContinuation: CheckedContinuation<Void, Error>?
+    private var remoteMoveContinuation: CheckedContinuation<Void, Error>?
     private var detailContinuation: CheckedContinuation<TransmissionTorrentDetail?, Never>?
     private var sessionContinuation: CheckedContinuation<TransmissionSession, Error>?
     private var torrentContinuation: CheckedContinuation<[TransmissionTorrent], Error>?
@@ -701,6 +728,13 @@ private actor ControlledRPC: TransmissionRPCProviding {
 
     func moveTorrent(torrentID: Int, destination: String) async throws {
         moves.append((torrentID, destination))
+        if hold == .remoteMove {
+            try await withCheckedThrowingContinuation { continuation in
+                remoteMoveContinuation = continuation
+                startedContinuation?.resume()
+                startedContinuation = nil
+            }
+        }
         remoteDownloadDir = destination
     }
 
@@ -811,7 +845,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
     func waitForHeldCall() async {
         guard sessionContinuation == nil, torrentContinuation == nil,
               actionContinuation == nil, fileActionContinuation == nil,
-              detailContinuation == nil else {
+              remoteMoveContinuation == nil, detailContinuation == nil else {
             return
         }
         await withCheckedContinuation { continuation in
@@ -830,6 +864,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         actionContinuation = nil
         fileActionContinuation?.resume()
         fileActionContinuation = nil
+        remoteMoveContinuation?.resume()
+        remoteMoveContinuation = nil
         detailContinuation?.resume(returning: try? detailFixture(1))
         detailContinuation = nil
     }
@@ -843,6 +879,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
         actionContinuation = nil
         fileActionContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
         fileActionContinuation = nil
+        remoteMoveContinuation?.resume(throwing: TransmissionRPCError.unauthorized)
+        remoteMoveContinuation = nil
         detailContinuation?.resume(returning: nil)
         detailContinuation = nil
     }

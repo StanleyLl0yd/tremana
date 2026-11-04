@@ -547,6 +547,20 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test func canonicalUnicodeRemotePathsAndDerivedFileNames() throws {
+        #expect(try RemoteTorrentPath.destination("/mnt/Видео/Новые фильмы") ==
+                "/mnt/Видео/Новые фильмы")
+        #expect(try RemoteTorrentPath.relative("Сериал/第01話.mkv") == "Сериал/第01話.mkv")
+        #expect(try RemoteTorrentPath.name("Épisode 1.mkv") == "Épisode 1.mkv")
+
+        let detail = try JSONDecoder().decode(
+            TransmissionTorrentDetail.self,
+            from: Data(#"{"id":1,"name":"Example","status":4,"files":[{"name":"Series/E01.mkv","length":10,"bytesCompleted":0},{"name":"Series/Specials/Extra.mkv","length":10,"bytesCompleted":0}]}"#.utf8)
+        )
+        #expect(RemoteTorrentPath.renameCandidates(files: detail.files ?? []) ==
+                ["Series", "Series/E01.mkv", "Series/Specials", "Series/Specials/Extra.mkv"])
+    }
+
     private func makeClient() throws -> TransmissionRPCClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]

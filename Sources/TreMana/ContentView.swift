@@ -458,6 +458,10 @@ private struct TorrentTableView: View {
                             Text("Connection remembered securely")
                         } else if footerMessage == "File selection updated" {
                             Text("File selection updated")
+                        } else if footerMessage == "Server move confirmed" {
+                            Text("Server move confirmed")
+                        } else if footerMessage == "Server path rename confirmed" {
+                            Text("Server path rename confirmed")
                         } else {
                             Text(footerMessage)
                         }
