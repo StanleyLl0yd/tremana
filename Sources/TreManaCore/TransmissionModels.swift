@@ -54,6 +54,11 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
     public let peersGettingFromUs: Int?
     public let queuePosition: Int?
     public let errorString: String
+    public let fileStats: [TransmissionTorrentFileStat]?
+
+    public var filePrioritySummary: TorrentFilePrioritySummary {
+        TorrentFilePrioritySummary(fileStats: fileStats)
+    }
 
     public init(
         id: Int,
@@ -75,7 +80,8 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
         peersConnected: Int? = nil,
         peersSendingToUs: Int? = nil,
         peersGettingFromUs: Int? = nil,
-        queuePosition: Int? = nil
+        queuePosition: Int? = nil,
+        fileStats: [TransmissionTorrentFileStat]? = nil
     ) {
         self.id = id
         self.name = name
@@ -97,6 +103,7 @@ public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
         self.peersSendingToUs = peersSendingToUs
         self.peersGettingFromUs = peersGettingFromUs
         self.queuePosition = queuePosition
+        self.fileStats = fileStats
     }
 
     public var statusDescription: String {

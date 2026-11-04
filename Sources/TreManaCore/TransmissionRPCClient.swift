@@ -144,7 +144,8 @@ public actor TransmissionRPCClient {
             "rateUpload", "sizeWhenDone", "eta", "errorString",
             "addedDate", "doneDate", "uploadRatio", "uploadedEver",
             "downloadedEver", "totalSize", "leftUntilDone", "peersConnected",
-            "peersSendingToUs", "peersGettingFromUs", "queuePosition"
+            "peersSendingToUs", "peersGettingFromUs", "queuePosition",
+            "fileStats"
         ]
         let response: TorrentList = try await call(
             "torrent-get",
