@@ -210,3 +210,10 @@
 "OK" = "ОК";
 "Toolbar" = "Панель";
 "Ordered download pending" = "Изменение очереди ожидает подтверждения";
+"Active" = "Активные";
+"Paused" = "Приостановленные";
+"Settings" = "Настройки";
+"Search torrents" = "Поиск торрентов";
+"Mixed" = "Смешанный";
+"Based on file priorities" = "Сводка приоритетов отдельных файлов";
+"Files selected" = "файлов выбрано";

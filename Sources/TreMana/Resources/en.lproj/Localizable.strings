@@ -210,3 +210,10 @@
 "OK" = "OK";
 "Toolbar" = "Toolbar";
 "Ordered download pending" = "Ordered download pending";
+"Active" = "Active";
+"Paused" = "Paused";
+"Settings" = "Settings";
+"Search torrents" = "Search torrents";
+"Mixed" = "Mixed";
+"Based on file priorities" = "Based on file priorities";
+"Files selected" = "files selected";
