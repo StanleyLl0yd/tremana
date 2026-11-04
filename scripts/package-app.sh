@@ -18,7 +18,12 @@ for locale_dir in "$ROOT"/Sources/TreMana/Resources/*.lproj; do
     [[ -d "$locale_dir" ]] || continue
     cp -R "$locale_dir" "$APP/Contents/Resources/"
 done
-codesign --force --sign "${TREMANA_CODESIGN_IDENTITY:--}" --entitlements "$ROOT/Config/TreMana.entitlements" "$APP"
+signing_args=(--force --sign "${TREMANA_CODESIGN_IDENTITY:--}" --entitlements "$ROOT/Config/TreMana.entitlements")
+if [[ -n "${TREMANA_SIGNING_KEYCHAIN:-}" ]]; then
+    [[ "${TREMANA_CODESIGN_IDENTITY:--}" != "-" ]] || exit 1
+    signing_args+=(--keychain "$TREMANA_SIGNING_KEYCHAIN")
+fi
+codesign "${signing_args[@]}" "$APP"
 codesign --verify --verbose=2 "$APP"
 echo "Packaged: $APP"
 printf 'TreMana executable bytes: %s\n' "$(stat -f '%z' "$APP/Contents/MacOS/TreMana")"
