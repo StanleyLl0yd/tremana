@@ -18,7 +18,7 @@ for locale_dir in "$ROOT"/Sources/TreMana/Resources/*.lproj; do
     [[ -d "$locale_dir" ]] || continue
     cp -R "$locale_dir" "$APP/Contents/Resources/"
 done
-codesign --force --sign - --entitlements "$ROOT/Config/TreMana.entitlements" "$APP"
+codesign --force --sign "${TREMANA_CODESIGN_IDENTITY:--}" --entitlements "$ROOT/Config/TreMana.entitlements" "$APP"
 codesign --verify --verbose=2 "$APP"
 echo "Packaged: $APP"
 printf 'TreMana executable bytes: %s\n' "$(stat -f '%z' "$APP/Contents/MacOS/TreMana")"
