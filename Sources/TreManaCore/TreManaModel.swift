@@ -577,6 +577,31 @@ public final class TreManaModel {
         }
     }
 
+    public func setStrictFileQueue(torrentID: Int, enabled: Bool) async {
+        guard let client, !isBusy, torrentID > 0,
+              torrents.contains(where: { $0.id == torrentID }) else { return }
+        let ticket = connectionGeneration
+        mutationGeneration &+= 1
+        isBusy = true
+        defer { if connectionGeneration == ticket { isBusy = false } }
+        do {
+            try await strictQueueController.setEnabled(
+                enabled, torrentID: torrentID, endpoint: rpcURL, client: client
+            )
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            errorMessage = nil
+            noticeMessage = enabled ? "Strict file queue enabled" : "Strict file queue disabled"
+            if selectedTorrentIDs == Set([torrentID]) {
+                await loadSelectedTorrentDetails()
+            }
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            errorMessage = error.localizedDescription
+        }
+    }
+
     public func refresh() async {
         // A passive poll may not block an explicit user action.
         guard let client, !isBusy, !isRefreshing else { return }
