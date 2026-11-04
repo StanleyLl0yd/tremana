@@ -512,6 +512,90 @@ struct TreManaModelTests {
         #expect(!model.isBusy)
     }
 
+
+    @Test @MainActor func remoteMoveRejectsChangedServerLocation() async throws {
+        let remote = ControlledRPC(hold: .none, torrents: [fixtureTorrent(1)])
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        let snapshot = try #require(await model.remoteActionDetail(for: 1))
+        await remote.updateRemoteDownloadDir("/mnt/changed-by-other-client")
+
+        let success = await model.moveTorrent(
+            to: "/mnt/new-location", expected: snapshot
+        )
+        #expect(!success)
+        #expect(await remote.remoteMoveCalls().isEmpty)
+        #expect(model.errorMessage == TransmissionRPCError.remoteStateChanged.localizedDescription)
+    }
+
+    @Test @MainActor func moveConfirmsOneTorrentAndRefreshesRemoteLocation() async throws {
+        let remote = ControlledRPC(hold: .none, torrents: [fixtureTorrent(1)])
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        let snapshot = try #require(await model.remoteActionDetail(for: 1))
+
+        let success = await model.moveTorrent(
+            to: "/mnt/archive", expected: snapshot
+        )
+        #expect(success)
+        let calls = await remote.remoteMoveCalls()
+        #expect(calls.count == 1)
+        #expect(calls.first?.torrentID == 1)
+        #expect(calls.first?.destination == "/mnt/archive")
+        #expect(model.selectedTorrentDetail?.downloadDir == "/mnt/archive")
+        #expect(model.noticeMessage == "Server move confirmed")
+    }
+
+    @Test @MainActor func remoteRenameIsBoundToExistingFileMetadata() async throws {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)], wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        let snapshot = try #require(await model.remoteActionDetail(for: 1))
+
+        let invalid = await model.renameTorrentPath(
+            "not-in-torrent", to: "unrelated", expected: snapshot
+        )
+        #expect(!invalid)
+        #expect(await remote.remoteRenameCalls().isEmpty)
+
+        let success = await model.renameTorrentPath(
+            "file_0", to: "renamed_file", expected: snapshot
+        )
+        #expect(success)
+        let calls = await remote.remoteRenameCalls()
+        #expect(calls.count == 1)
+        #expect(calls.first?.torrentID == 1)
+        #expect(calls.first?.path == "file_0")
+        #expect(calls.first?.name == "renamed_file")
+        #expect(model.selectedTorrentDetail?.files?[0].name == "renamed_file")
+        #expect(model.noticeMessage == "Server path rename confirmed")
+    }
+
+    @Test @MainActor func remoteRenameRefusesStaleFileList() async throws {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)], wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        let snapshot = try #require(await model.remoteActionDetail(for: 1))
+        await remote.renameTestFiles()
+
+        let success = await model.renameTorrentPath(
+            "file_0", to: "new_name", expected: snapshot
+        )
+        #expect(!success)
+        #expect(await remote.remoteRenameCalls().isEmpty)
+        #expect(model.errorMessage == TransmissionRPCError.remoteStateChanged.localizedDescription)
+    }
+
     @Test @MainActor func staleNetworkErrorDoesNotAppearAfterDisconnect() async {
         let remote = ControlledRPC(hold: .session, torrents: [])
         let model = TreManaModel(makeClient: { _ in remote })
@@ -550,6 +634,10 @@ private actor ControlledRPC: TransmissionRPCProviding {
     let contents: [TransmissionTorrent]
     private var wantedStates: [Bool]?
     private var fileNamePrefix = "file_"
+    private var fileNameOverrides: [Int: String] = [:]
+    private var remoteDownloadDir = "/mnt/downloads"
+    private var moves: [(torrentID: Int, destination: String)] = []
+    private var renames: [(torrentID: Int, path: String, name: String)] = []
     private let rejectFileChanges: Bool
     private var changedFiles: [(torrentID: Int, fileIndex: Int, wanted: Bool)] = []
     private var torrentCalls = 0
@@ -604,6 +692,28 @@ private actor ControlledRPC: TransmissionRPCProviding {
         fileNamePrefix = "different_"
     }
 
+    func updateRemoteDownloadDir(_ path: String) {
+        remoteDownloadDir = path
+    }
+
+    func remoteMoveCalls() -> [(torrentID: Int, destination: String)] { moves }
+    func remoteRenameCalls() -> [(torrentID: Int, path: String, name: String)] { renames }
+
+    func moveTorrent(torrentID: Int, destination: String) async throws {
+        moves.append((torrentID, destination))
+        remoteDownloadDir = destination
+    }
+
+    func renameTorrentPath(torrentID: Int, path: String, name: String) async throws {
+        renames.append((torrentID, path, name))
+        guard let count = wantedStates?.count else { return }
+        for index in 0..<count {
+            if (fileNameOverrides[index] ?? "\\(fileNamePrefix)\\(index)") == path {
+                fileNameOverrides[index] = name
+            }
+        }
+    }
+
     func addTorrent(
         _ source: TorrentAddSource,
         startImmediately: Bool
@@ -628,13 +738,16 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private func detailFixture(_ id: Int) throws -> TransmissionTorrentDetail {
         if let wantedStates {
             let files: [[String: Any]] = wantedStates.indices.map { index in
-                ["name": "\(fileNamePrefix)\(index)", "length": 1, "bytesCompleted": 0]
+                ["name": fileNameOverrides[index] ?? "\(fileNamePrefix)\(index)",
+                 "length": 1, "bytesCompleted": 0]
             }
             let stats: [[String: Any]] = wantedStates.map { wanted in
                 ["wanted": wanted, "priority": 0, "bytesCompleted": 0]
             }
             let payload: [String: Any] = [
                 "id": id, "name": "Torrent \(id)", "status": 4,
+                "hashString": String(format: "%040x", id),
+                "downloadDir": remoteDownloadDir,
                 "files": files, "fileStats": stats
             ]
             return try JSONDecoder().decode(
@@ -642,9 +755,14 @@ private actor ControlledRPC: TransmissionRPCProviding {
                 from: JSONSerialization.data(withJSONObject: payload)
             )
         }
+        let payload: [String: Any] = [
+            "id": id, "name": "Torrent \(id)", "status": 4,
+            "hashString": String(format: "%040x", id),
+            "downloadDir": remoteDownloadDir
+        ]
         return try JSONDecoder().decode(
             TransmissionTorrentDetail.self,
-            from: Data("{\"id\":\(id),\"name\":\"Torrent \(id)\",\"status\":4}".utf8)
+            from: JSONSerialization.data(withJSONObject: payload)
         )
     }
 
