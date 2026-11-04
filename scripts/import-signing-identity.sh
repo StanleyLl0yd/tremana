@@ -38,24 +38,43 @@ openssl x509 -in "$cert" -noout -subject |
     grep -Fq 'TreMana Code Signing' ||
     { echo "This is not the separate TreMana signing identity" >&2; exit 1; }
 
-security create-keychain -p "$keychain_password" "$keychain"
-security set-keychain-settings -lut 7200 "$keychain"
-security unlock-keychain -p "$keychain_password" "$keychain"
-security list-keychains -d user -s "$keychain"
-security import "$p12" -k "$keychain" \
+# Self-signed trust changes request an interactive GUI authorization on macOS.
+# Do NOT call security add-trusted-cert from an unattended runner.
+# Imported identity is pinned by fingerprint; actual signing & DR are verified.
+run_security() {
+    local phase="$1"
+    shift
+    echo "Keychain stage: $phase"
+    python3 - "$@" <<'PY'
+import subprocess
+import sys
+
+try:
+    subprocess.run(["/usr/bin/security", *sys.argv[1:]], check=True, timeout=75)
+except subprocess.TimeoutExpired:
+    print("Non-interactive Keychain command timed out", file=sys.stderr)
+    sys.exit(124)
+PY
+}
+
+run_security "create" create-keychain -p "$keychain_password" "$keychain"
+run_security "set lock timeout" set-keychain-settings -lut 7200 "$keychain"
+run_security "unlock" unlock-keychain -p "$keychain_password" "$keychain"
+run_security "register search path" list-keychains -d user -s "$keychain"
+run_security "import encrypted private identity" import "$p12" -k "$keychain" \
     -P "$TREMANA_CERT_PASSWORD" -T /usr/bin/codesign
-security add-trusted-cert -r trustRoot -p codeSign -k "$keychain" "$cert"
-security set-key-partition-list -S apple-tool:,apple:,codesign: \
-    -s -k "$keychain_password" "$keychain" >/dev/null
+run_security "authorize codesign partition" set-key-partition-list \
+    -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
 unset TREMANA_CERT_PASSWORD
 
 identity="$(openssl x509 -in "$cert" -noout -fingerprint -sha1 |
     awk -F= '{print $2}' | tr -d ':\r\n' | tr '[:lower:]' '[:upper:]')"
 [[ "$identity" =~ ^[A-F0-9]{40}$ ]] ||
     { echo "Invalid certificate SHA-1 identity selector" >&2; exit 1; }
-security find-identity -v -p codesigning "$keychain" > "$RUNNER_TEMP/tremana-identities.txt"
+run_security "verify imported identity" find-identity -p codesigning "$keychain" \
+    > "$RUNNER_TEMP/tremana-identities.txt"
 grep -Fq "$identity" "$RUNNER_TEMP/tremana-identities.txt" ||
-    { echo "Imported identity is not valid for macOS Code Signing" >&2; exit 1; }
+    { echo "The pinned certificate/private key pair was not imported" >&2; exit 1; }
 
 printf 'TREMANA_CODESIGN_IDENTITY=%s\n' "$identity" >> "$GITHUB_ENV"
 printf 'TREMANA_SIGNING_KEYCHAIN=%s\n' "$keychain" >> "$GITHUB_ENV"
