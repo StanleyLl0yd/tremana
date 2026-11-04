@@ -16,6 +16,10 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
     case invalidMagnetLink
     case invalidTorrentMetainfo
     case invalidTorrentAddReply
+    case invalidRemotePath
+    case invalidRenameName
+    case remoteStateChanged
+    case invalidRenameReply
 
     public var errorDescription: String? {
         switch self {
@@ -49,6 +53,14 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
             "The .torrent file must contain between 1 byte and 16 MiB of data."
         case .invalidTorrentAddReply:
             "Transmission returned success without identifying the added or existing torrent."
+        case .invalidRemotePath:
+            "Enter a canonical absolute path on the Transmission server. Relative paths, traversal and control characters are not allowed."
+        case .invalidRenameName:
+            "Enter a single filename or folder name without slashes, traversal or control characters."
+        case .remoteStateChanged:
+            "The torrent or its server path changed. Reopen this action and confirm the latest details."
+        case .invalidRenameReply:
+            "Transmission did not confirm the renamed torrent path."
         }
     }
 }
@@ -207,6 +219,41 @@ public actor TransmissionRPCClient {
                 field: .array([.integer(fileIndex)])
             ]
         )
+    }
+
+    public func moveTorrent(torrentID: Int, destination: String) async throws {
+        guard torrentID > 0 else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        let path = try RemoteTorrentPath.destination(destination)
+        // This is a server-side move, never a local Finder operation.
+        let _: RPCReply<EmptyRPCArguments> = try await send(
+            "torrent-set-location",
+            arguments: [
+                "ids": .array([.integer(torrentID)]),
+                "location": .string(path),
+                "move": .boolean(true)
+            ]
+        )
+    }
+
+    public func renameTorrentPath(torrentID: Int, path: String, name: String) async throws {
+        guard torrentID > 0 else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        let existingPath = try RemoteTorrentPath.relative(path)
+        let newName = try RemoteTorrentPath.name(name)
+        let result: RenamePathArguments = try await call(
+            "torrent-rename-path",
+            arguments: [
+                "ids": .array([.integer(torrentID)]),
+                "path": .string(existingPath),
+                "name": .string(newName)
+            ]
+        )
+        guard result.id == torrentID, !result.path.isEmpty, !result.name.isEmpty else {
+            throw TransmissionRPCError.invalidRenameReply
+        }
     }
 
     public func magnetLink(id: Int) async throws -> String? {
@@ -369,4 +416,10 @@ private struct TorrentMagnetList: Decodable {
 private struct TorrentMagnetItem: Decodable {
     let id: Int
     let magnetLink: String?
+}
+
+private struct RenamePathArguments: Decodable {
+    let id: Int
+    let path: String
+    let name: String
 }
