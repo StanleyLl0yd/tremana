@@ -8,6 +8,9 @@ public protocol TransmissionRPCProviding: Sendable {
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws
     func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws
+    func setQueueFileSelection(
+        torrentID: Int, wanted: [Int], unwanted: [Int]
+    ) async throws
     func moveTorrent(torrentID: Int, destination: String) async throws
     func renameTorrentPath(torrentID: Int, path: String, name: String) async throws
     func perform(_ action: TorrentAction, ids: [Int]) async throws
@@ -23,6 +26,12 @@ extension TransmissionRPCProviding {
 
     public func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws {
         throw TransmissionRPCError.invalidFilePriority
+    }
+
+    public func setQueueFileSelection(
+        torrentID: Int, wanted: [Int], unwanted: [Int]
+    ) async throws {
+        throw TransmissionRPCError.invalidFileSelection
     }
 
     public func moveTorrent(torrentID: Int, destination: String) async throws {
@@ -74,6 +83,7 @@ public final class TreManaModel {
     public private(set) var selectedTorrentDetail: TransmissionTorrentDetail?
     public private(set) var detailErrorMessage: String?
     public private(set) var isLoadingDetail = false
+    public private(set) var strictQueueTorrentIDs: Set<Int> = []
 
     @ObservationIgnored
     private let makeClient: @MainActor (TransmissionConnection) -> any TransmissionRPCProviding
@@ -99,6 +109,9 @@ public final class TreManaModel {
     @ObservationIgnored
     private let profileStore: any ConnectionProfileStoring
 
+    @ObservationIgnored
+    private let strictQueueController: StrictFileQueueController
+
     public var isConnected: Bool { server != nil && client != nil }
 
     public var canReuseSavedPassword: Bool {
@@ -115,10 +128,12 @@ public final class TreManaModel {
         makeClient: @escaping @MainActor (TransmissionConnection) -> any TransmissionRPCProviding = {
             TransmissionRPCClient(connection: $0)
         },
-        profileStore: any ConnectionProfileStoring = UserDefaultsProfileStore()
+        profileStore: any ConnectionProfileStoring = UserDefaultsProfileStore(),
+        strictQueueDefaults: UserDefaults = .standard
     ) {
         self.makeClient = makeClient
         self.profileStore = profileStore
+        self.strictQueueController = StrictFileQueueController(defaults: strictQueueDefaults)
     }
 
     public func reloadProfiles() async {
@@ -264,6 +279,7 @@ public final class TreManaModel {
             selectedTorrentIDs = []
             noticeMessage = nil
             password = ""
+            strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: requestedURL)
 
             guard shouldRemember else { return }
             // Never reuse an existing profile's credential on a changed endpoint.
@@ -383,6 +399,10 @@ public final class TreManaModel {
         expectedWanted: Bool
     ) async {
         guard let client, !isBusy else { return }
+        guard !strictQueueTorrentIDs.contains(torrentID) else {
+            errorMessage = TransmissionRPCError.fileSelectionChanged.localizedDescription
+            return
+        }
         guard torrentID > 0,
               selectedTorrentIDs == Set([torrentID]),
               torrents.contains(where: { $0.id == torrentID }),
@@ -919,6 +939,7 @@ public final class TreManaModel {
         errorMessage = nil
         noticeMessage = nil
         password = ""
+        strictQueueTorrentIDs = []
         isBusy = false
         isRefreshing = false
         mutationGeneration &+= 1
