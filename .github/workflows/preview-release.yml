@@ -1,15 +1,15 @@
-name: TreMana 0.2.0 test release
+name: TreMana numeric test release
 
 on:
   push:
     branches:
-      - release/v0.2.0
+      - 'release/v*'
 
 permissions:
   contents: write
 
 concurrency:
-  group: tremana-preview-v0.2.0
+  group: tremana-preview-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -26,14 +26,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF" == "refs/heads/release/v0.2.0" ]] || exit 1
+          [[ "$GITHUB_REF" =~ ^refs/heads/release/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Only numeric release branches can publish" >&2
+            exit 1
+          }
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
-          [[ "$version" == "0.2.0" ]] || exit 1
-          preview="$(/usr/libexec/PlistBuddy -c 'Print :TreManaTestVersion' Config/Info.plist)"
-          [[ "$preview" == "0.2.0" ]] || exit 1
-          test -s docs/releases/v0.2.0.md
-          echo 'RELEASE_TAG=v0.2.0' >> "$GITHUB_ENV"
-          echo 'RELEASE_VERSION=0.2.0' >> "$GITHUB_ENV"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$GITHUB_REF" == "refs/heads/release/v$version" ]] || exit 1
+          [[ "$(tr -d '[:space:]' < release/VERSION)" == "$version" ]] || exit 1
+          test -s "docs/releases/v$version.md"
+          echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Select Xcode 27
         shell: bash
@@ -66,9 +69,9 @@ jobs:
           app=dist/TreMana.app
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" | grep -Fx 'com.sl.tremana'
           /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist" | grep -Fx '27.0'
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" | grep -Fx '0.2.0'
-          /usr/libexec/PlistBuddy -c 'Print :TreManaTestVersion' "$app/Contents/Info.plist" | grep -Fx "$RELEASE_VERSION"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist" | grep -Fx '2'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" | grep -Fx "$RELEASE_VERSION"
+          bundle_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
+          [[ "$bundle_build" =~ ^[1-9][0-9]*$ ]] || exit 1
           codesign --verify --strict "$app"
           for locale in en ru; do
             test -s "$app/Contents/Resources/$locale.lproj/Localizable.strings"
@@ -109,7 +112,7 @@ jobs:
               -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" > /dev/null
           fi
           gh release create "$RELEASE_TAG" "$ASSET_PATH" "$CHECKSUM_PATH" \
-            --verify-tag --prerelease \
+            --verify-tag --prerelease --target "$GITHUB_SHA" \
             --title "TreMana $RELEASE_VERSION (test build)" \
             --notes-file "docs/releases/$RELEASE_TAG.md"
 
@@ -120,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName,assets \
-            --jq 'if (.isDraft == false and .isPrerelease == true and .tagName == "v0.2.0" and (.assets | length) == 2) then "PREVIEW VERIFIED" else error("Invalid release metadata") end'
+            --jq 'if (.isDraft == false and .isPrerelease == true and (.assets | length) == 2) then "PREVIEW VERIFIED" else error("Invalid release metadata") end'
           mkdir -p "$RUNNER_TEMP/tremana-preview-verify"
           gh release download "$RELEASE_TAG" \
             --pattern "$(basename "$ASSET_PATH")" \
