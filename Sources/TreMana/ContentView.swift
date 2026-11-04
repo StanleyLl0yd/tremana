@@ -475,8 +475,8 @@ private struct ConnectionView: View {
 private struct TorrentTableView: View {
     @Environment(TreManaModel.self) private var model
     let filter: TorrentFilter
-    @State private var inspectorExpanded = false
-    @State private var inspectorTab: InspectorTab = .overview
+    let searchText: String
+    @State private var inspectorTab: InspectorTab = .files
     @State private var pendingVerifyIDs: [Int] = []
     @State private var pendingRemoveIDs: [Int] = []
     @State private var showingVerifyDialog = false
@@ -486,15 +486,24 @@ private struct TorrentTableView: View {
     @State private var queueRequestEnabled = false
     @State private var showingQueueConfirmation = false
     @State private var showingPiecesLimitation = false
-    @SceneStorage("com.sl.tremana.table-columns.v1")
+    @SceneStorage("com.sl.tremana.table-columns.v2")
     private var columnCustomization: TableColumnCustomization<TransmissionTorrent>
 
     private var filteredTorrents: [TransmissionTorrent] {
+        let filtered: [TransmissionTorrent]
         switch filter {
-        case .all: model.torrents
-        case .downloading: model.torrents.filter { $0.status == 4 }
-        case .seeding: model.torrents.filter { $0.status == 6 }
+        case .all:
+            filtered = model.torrents
+        case .active:
+            filtered = model.torrents.filter { [1, 2, 3, 4, 5, 6].contains($0.status) }
+        case .completed:
+            filtered = model.torrents.filter { $0.percentDone >= 1 }
+        case .paused:
+            filtered = model.torrents.filter { $0.status == 0 }
         }
+        let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return filtered }
+        return filtered.filter { $0.name.localizedStandardContains(term) }
     }
 
     private var activeCount: Int {
@@ -517,12 +526,8 @@ private struct TorrentTableView: View {
         @Bindable var observedModel = model
 
         VStack(spacing: 0) {
-            if inspectorExpanded {
-                TorrentInspectorView(isExpanded: $inspectorExpanded, selectedTab: $inspectorTab)
-                    .frame(maxHeight: .infinity)
-            } else {
-                VSplitView {
-                    Table(
+            VSplitView {
+                Table(
                         filteredTorrents,
                         selection: $observedModel.selectedTorrentIDs,
                         columnCustomization: $columnCustomization
@@ -643,15 +648,21 @@ private struct TorrentTableView: View {
                         }
                         .disabled(selection.isEmpty || model.isBusy)
                     }
-                    .accessibilityLabel("Transmission torrents")
-                    .alternatingRowBackgrounds(.disabled)
-                    .frame(minHeight: 85)
-                    TorrentInspectorView(isExpanded: $inspectorExpanded, selectedTab: $inspectorTab)
-                        .frame(minHeight: 120, idealHeight: 315)
-                }
-            }
+                .accessibilityLabel("Transmission torrents")
+                .alternatingRowBackgrounds(.disabled)
+                .frame(minHeight: 180, idealHeight: 320)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
 
-            Divider()
+                TorrentInspectorView(selectedTab: $inspectorTab)
+                    .frame(minHeight: 190, idealHeight: 300)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 9)
+
+            Divider().opacity(0.35)
 
             HStack(spacing: 9) {
                 if let footerMessage {
@@ -681,15 +692,33 @@ private struct TorrentTableView: View {
                 }
                 Spacer(minLength: 6)
                 if let server = model.server {
-                    Text("Transmission \(server.version) · RPC \(server.rpcVersion)")
+                    Text("Transmission \(server.version)")
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
                     Divider().frame(height: 15)
-                    Label("\(activeCount)", systemImage: "arrow.down.circle")
-                        .help("Active transfers")
-                    Label("\(seedingCount)", systemImage: "arrow.up.circle")
-                        .help("Seeding torrents")
+                    Label(
+                        ByteCountFormatter.string(
+                            fromByteCount: model.torrents.reduce(Int64(0)) {
+                                $0 &+ max(Int64(0), $1.rateDownload)
+                            },
+                            countStyle: .binary
+                        ) + "/s",
+                        systemImage: "arrow.down"
+                    )
+                    .foregroundStyle(.secondary)
+                    Label(
+                        ByteCountFormatter.string(
+                            fromByteCount: model.torrents.reduce(Int64(0)) {
+                                $0 &+ max(Int64(0), $1.rateUpload)
+                            },
+                            countStyle: .binary
+                        ) + "/s",
+                        systemImage: "arrow.up"
+                    )
+                    .foregroundStyle(.secondary)
                     Divider().frame(height: 15)
+                    Label("\(activeCount)", systemImage: "square.stack")
+                        .help("Active transfers")
                 }
                 if let last = model.lastRefreshAt {
                     Text(last, format: .dateTime.hour().minute().second())
