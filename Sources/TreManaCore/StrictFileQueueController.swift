@@ -98,11 +98,21 @@ public final class StrictFileQueueController {
         _ record: StrictQueueRecord,
         client: any TransmissionRPCProviding
     ) async throws {
-        guard let detail = try await client.torrentDetails(id: record.torrentID),
-              record.matches(detail), record.acceptsObservedWanted(detail) else {
+        guard let detail = try await client.torrentDetails(id: record.torrentID) else {
+            try forget(record)
+            return
+        }
+        guard record.matches(detail) else {
             throw TransmissionRPCError.fileSelectionChanged
         }
         let plan = try record.plan(for: detail)
+        if plan.isFinished && record.wantedMatches(detail, active: nil) {
+            try forget(record)
+            return
+        }
+        guard record.acceptsObservedWanted(detail) else {
+            throw TransmissionRPCError.fileSelectionChanged
+        }
         guard let next = plan.activeFileIndex else {
             if !record.wantedMatches(detail, active: nil) {
                 try await client.setQueueFileSelection(
