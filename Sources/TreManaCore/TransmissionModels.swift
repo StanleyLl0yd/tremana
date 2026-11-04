@@ -27,10 +27,10 @@ public struct TransmissionCapabilities: Sendable, Equatable {
     // Newer RPC protocols require a separate adapter before enabling the feature.
     public var supportsSequentialPieces: Bool { false }
 
-    // The server exposes files-wanted/files-unwanted, but an autonomous
-    // strict queue controller is not yet implemented in TreMana.
+    // TreMana advances selected files using files-wanted/files-unwanted.
+    // While the Mac is asleep or the application is closed, the next file waits.
     public var supportsFileSelection: Bool { supportsLegacyRPC }
-    public var hasStrictFileQueueController: Bool { false }
+    public var hasStrictFileQueueController: Bool { supportsLegacyRPC }
 }
 
 public struct TransmissionTorrent: Decodable, Identifiable, Sendable {
