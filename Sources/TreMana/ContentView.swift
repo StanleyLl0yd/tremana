@@ -252,8 +252,16 @@ private struct TorrentCommandBar: View {
                     }
                 }
             } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .frame(width: 28, height: 28)
+                HStack(spacing: 6) {
+                    if selectedPresentation != .labels {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    if selectedPresentation != .icons {
+                        Text("Toolbar")
+                            .lineLimit(1)
+                    }
+                }
+                .frame(minHeight: 28)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
