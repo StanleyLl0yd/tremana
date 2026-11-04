@@ -7,6 +7,7 @@ struct RefreshSettingsView: View {
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
+    @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
 
     var body: some View {
         Form {
@@ -24,6 +25,14 @@ struct RefreshSettingsView: View {
                     Text("Dark").tag(AppearanceMode.dark.rawValue)
                 }
             }
+            Section("Toolbar") {
+                Picker("Toolbar appearance", selection: $toolbarPresentation) {
+                    ForEach(ToolbarPresentation.allCases) { option in
+                        Text(LocalizedStringKey(option.title)).tag(option.rawValue)
+                    }
+                }
+            }
+
             Section("Torrent list") {
                 Toggle("Automatically refresh torrent information", isOn: $autoRefreshEnabled)
 
@@ -64,6 +73,6 @@ struct RefreshSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 490, height: 450)
+        .frame(width: 490, height: 505)
     }
 }

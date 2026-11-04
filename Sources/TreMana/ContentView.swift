@@ -173,7 +173,7 @@ struct ContentView: View {
     }
 }
 
-private enum ToolbarPresentation: String, CaseIterable, Identifiable {
+enum ToolbarPresentation: String, CaseIterable, Identifiable {
     case icons = "icons"
     case iconsAndLabels = "icons-and-labels"
     case labels = "labels"
