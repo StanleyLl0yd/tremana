@@ -95,9 +95,15 @@ public final class StrictFileQueueController {
         guard !processing else { return }
         processing = true
         defer { processing = false }
+        var firstError: Error?
         for record in records.filter({ $0.endpoint == endpoint }) {
-            try await reconcile(record, client: client)
+            do {
+                try await reconcile(record, client: client)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
         }
+        if let firstError { throw firstError }
     }
 
     private func reconcile(

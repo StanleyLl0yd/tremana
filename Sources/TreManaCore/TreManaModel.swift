@@ -439,6 +439,9 @@ public final class TreManaModel {
             guard connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]) else { return }
             guard let current,
+                  let displayedHash = displayed.hashString,
+                  !displayedHash.isEmpty,
+                  current.hashString == displayedHash,
                   let files = current.files,
                   let stats = current.fileStats,
                   files.count == stats.count,
@@ -531,7 +534,9 @@ public final class TreManaModel {
             guard connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]) else { return }
             guard let current,
-                  current.hashString == displayed.hashString,
+                  let displayedHash = displayed.hashString,
+                  !displayedHash.isEmpty,
+                  current.hashString == displayedHash,
                   let files = current.files,
                   let stats = current.fileStats,
                   files.count == stats.count,
