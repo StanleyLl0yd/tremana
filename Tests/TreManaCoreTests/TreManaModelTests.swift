@@ -708,7 +708,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         renames.append((torrentID, path, name))
         guard let count = wantedStates?.count else { return }
         for index in 0..<count {
-            if (fileNameOverrides[index] ?? "\\(fileNamePrefix)\\(index)") == path {
+            if (fileNameOverrides[index] ?? "\(fileNamePrefix)\(index)") == path {
                 fileNameOverrides[index] = name
             }
         }

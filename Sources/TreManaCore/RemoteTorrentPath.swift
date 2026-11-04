@@ -52,7 +52,7 @@ public enum RemoteTorrentPath {
 
     private static func validComponent(_ component: Substring) -> Bool {
         !component.isEmpty && component != "." && component != ".."
-            && !component.contains("\\")
+            && !component.contains("/") && !component.contains("\\")
             && !component.unicodeScalars.contains {
                 CharacterSet.controlCharacters.contains($0)
             }
