@@ -397,6 +397,60 @@ struct TransmissionRPCTests {
         }
     }
 
+    @Test(arguments: [true, false])
+    func fileWantedRPCUsesOneExplicitIndex(_ wanted: Bool) async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success"}"#)
+        ])
+        let client = try makeClient()
+        try await client.setFileWanted(torrentID: 7, fileIndex: 2, wanted: wanted)
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-set")
+        let arguments = try #require(request["arguments"] as? [String: Any])
+        #expect(arguments["ids"] as? [Int] == [7])
+        let selected = wanted ? "files-wanted" : "files-unwanted"
+        let opposite = wanted ? "files-unwanted" : "files-wanted"
+        #expect(arguments[selected] as? [Int] == [2])
+        #expect(arguments[opposite] == nil)
+        #expect(arguments["priority-high"] == nil)
+        #expect(arguments["priority-low"] == nil)
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func invalidFileSelectionNeverContactsDaemon() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for id in [0, -1] {
+            do {
+                try await client.setFileWanted(torrentID: id, fileIndex: 0, wanted: true)
+                Issue.record("Expected invalid torrent ID")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        do {
+            try await client.setFileWanted(torrentID: 7, fileIndex: -1, wanted: false)
+            Issue.record("Expected invalid file index")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .invalidFileSelection)
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
+    @Test func fileSelectionRPCFailureIsReported() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"file index invalid"}"#)
+        ])
+        let client = try makeClient()
+        do {
+            try await client.setFileWanted(torrentID: 7, fileIndex: 2, wanted: false)
+            Issue.record("Expected daemon refusal")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .serverError("file index invalid"))
+        }
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
     private func makeClient() throws -> TransmissionRPCClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]

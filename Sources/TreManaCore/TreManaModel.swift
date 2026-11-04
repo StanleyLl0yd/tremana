@@ -6,6 +6,7 @@ public protocol TransmissionRPCProviding: Sendable {
     func torrents() async throws -> [TransmissionTorrent]
     func torrentSwarm() async throws -> [Int: TorrentSwarmCounts]
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
+    func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws
     func perform(_ action: TorrentAction, ids: [Int]) async throws
     func removeTorrents(ids: [Int], deleteLocalData: Bool) async throws
     func magnetLink(id: Int) async throws -> String?
@@ -13,6 +14,10 @@ public protocol TransmissionRPCProviding: Sendable {
 }
 
 extension TransmissionRPCProviding {
+    public func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws {
+        throw TransmissionRPCError.invalidFileSelection
+    }
+
     public func torrentSwarm() async throws -> [Int: TorrentSwarmCounts] { [:] }
 
     public func removeTorrents(ids: [Int], deleteLocalData: Bool) async throws {
@@ -72,6 +77,9 @@ public final class TreManaModel {
 
     @ObservationIgnored
     private var detailGeneration: UInt64 = 0
+
+    @ObservationIgnored
+    private var editingFileSelectionForID: Int?
 
     @ObservationIgnored
     private let profileStore: any ConnectionProfileStoring
@@ -308,6 +316,12 @@ public final class TreManaModel {
     }
 
     public func loadSelectedTorrentDetails() async {
+        // Suppress old detail snapshots for the edited torrent, but allow
+        // an immediate detail load if the user switches to a different torrent.
+        if let editingFileSelectionForID,
+           selectedTorrentIDs == Set([editingFileSelectionForID]) {
+            return
+        }
         detailGeneration &+= 1
         let ticket = detailGeneration
         let connectionTicket = connectionGeneration
@@ -344,6 +358,98 @@ public final class TreManaModel {
                   detailGeneration == ticket,
                   selectedTorrentIDs == Set([id]) else { return }
             detailErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func setFileWanted(
+        torrentID: Int,
+        fileIndex: Int,
+        wanted: Bool,
+        expectedWanted: Bool
+    ) async {
+        guard let client, !isBusy else { return }
+        guard torrentID > 0,
+              selectedTorrentIDs == Set([torrentID]),
+              torrents.contains(where: { $0.id == torrentID }),
+              let displayed = selectedTorrentDetail,
+              displayed.id == torrentID,
+              let displayedFiles = displayed.files,
+              let displayedStats = displayed.fileStats,
+              displayedFiles.count == displayedStats.count,
+              displayedFiles.indices.contains(fileIndex),
+              displayedStats[fileIndex].wanted == expectedWanted,
+              expectedWanted != wanted else {
+            errorMessage = TransmissionRPCError.invalidFileSelection.localizedDescription
+            return
+        }
+
+        mutationGeneration &+= 1
+        detailGeneration &+= 1
+        isLoadingDetail = false
+        detailErrorMessage = nil
+        let ticket = connectionGeneration
+        isBusy = true
+        editingFileSelectionForID = torrentID
+        defer {
+            if connectionGeneration == ticket {
+                editingFileSelectionForID = nil
+                isBusy = false
+            }
+        }
+
+        do {
+            // Recheck the live daemon selection before changing it; the
+            // inspector may have been stale or another client may have edited it.
+            let current = try await client.torrentDetails(id: torrentID)
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            guard let current,
+                  let files = current.files,
+                  let stats = current.fileStats,
+                  files.count == stats.count,
+                  files.count == displayedFiles.count,
+                  files.indices.contains(fileIndex),
+                  files[fileIndex].name == displayedFiles[fileIndex].name,
+                  files[fileIndex].length == displayedFiles[fileIndex].length else {
+                throw TransmissionRPCError.invalidFileSelection
+            }
+            guard stats[fileIndex].wanted == expectedWanted else {
+                selectedTorrentDetail = current
+                throw TransmissionRPCError.fileSelectionChanged
+            }
+            if !wanted && stats.filter(\.wanted).count <= 1 {
+                throw TransmissionRPCError.lastWantedFile
+            }
+
+            try await client.setFileWanted(
+                torrentID: torrentID, fileIndex: fileIndex, wanted: wanted
+            )
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+
+            // RPC success alone is not enough to claim the UI has changed.
+            selectedTorrentDetail = nil
+            let refreshed = try await client.torrentDetails(id: torrentID)
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            guard let refreshed,
+                  let verified = refreshed.fileStats,
+                  verified.indices.contains(fileIndex) else {
+                throw TransmissionRPCError.invalidFileSelection
+            }
+            selectedTorrentDetail = refreshed
+            guard verified[fileIndex].wanted == wanted else {
+                throw TransmissionRPCError.fileSelectionChanged
+            }
+            errorMessage = nil
+            noticeMessage = "File selection updated"
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            errorMessage = error.localizedDescription
+            noticeMessage = nil
+            if selectedTorrentDetail == nil {
+                detailErrorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -525,6 +631,7 @@ public final class TreManaModel {
         isRefreshingSwarm = false
         lastRefreshAt = nil
         detailGeneration &+= 1
+        editingFileSelectionForID = nil
         selectedTorrentDetail = nil
         detailErrorMessage = nil
         isLoadingDetail = false
