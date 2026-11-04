@@ -417,6 +417,54 @@ struct TransmissionRPCTests {
         #expect(MockURLProtocol.responses.requestCount == 1)
     }
 
+    @Test(arguments: [-1, 0, 1])
+    func filePriorityRPCUsesSingleExplicitIndex(_ priority: Int) async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success"}"#)
+        ])
+        let client = try makeClient()
+        try await client.setFilePriority(torrentID: 7, fileIndex: 2, priority: priority)
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-set")
+        let args = try #require(request["arguments"] as? [String: Any])
+        #expect(args["ids"] as? [Int] == [7])
+        let field = priority == -1 ? "priority-low"
+            : priority == 1 ? "priority-high" : "priority-normal"
+        #expect(args[field] as? [Int] == [2])
+        for other in ["priority-low", "priority-normal", "priority-high"] where other != field {
+            #expect(args[other] == nil)
+        }
+        #expect(args["files-wanted"] == nil)
+        #expect(args["files-unwanted"] == nil)
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func invalidPriorityNeverContactsDaemon() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for value in [-2, 2] {
+            do {
+                try await client.setFilePriority(torrentID: 7, fileIndex: 0, priority: value)
+                Issue.record("Accepted unsupported priority")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidFilePriority)
+            }
+        }
+        do {
+            try await client.setFilePriority(torrentID: 0, fileIndex: 0, priority: 1)
+            Issue.record("Accepted invalid torrent")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .invalidTorrentSelection)
+        }
+        do {
+            try await client.setFilePriority(torrentID: 7, fileIndex: -1, priority: 1)
+            Issue.record("Accepted invalid file index")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .invalidFilePriority)
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
     @Test func invalidFileSelectionNeverContactsDaemon() async throws {
         MockURLProtocol.responses.replace([])
         let client = try makeClient()

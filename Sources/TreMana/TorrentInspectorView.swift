@@ -222,7 +222,7 @@ struct TorrentInspectorView: View {
 
                             if let fileStats {
                                 HStack(spacing: 15) {
-                                    Toggle("Download", isOn: Binding(
+                                    Toggle("Download file", isOn: Binding(
                                         get: {
                                             guard let current = model.selectedTorrentDetail,
                                                   current.id == detail.id,

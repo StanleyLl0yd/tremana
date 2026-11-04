@@ -182,4 +182,15 @@
 "Transmission did not confirm the operation." = "Transmission did not confirm the operation.";
 "Server move confirmed" = "Server move confirmed";
 "Server path rename confirmed" = "Server path rename confirmed";
-\n"Priority" = "Priority";\n"Low" = "Low";\n"Normal" = "Normal";\n"High" = "High";\n"Files to download" = "Files to download";\n"File priority updated" = "File priority updated";\n"Toolbar appearance" = "Toolbar appearance";\n"Icons only" = "Icons only";\n"Icons and labels" = "Icons and labels";\n"Labels only" = "Labels only";
+
+"Priority" = "Priority";
+"Low" = "Low";
+"Normal" = "Normal";
+"High" = "High";
+"Files to download" = "Files to download";
+"File priority updated" = "File priority updated";
+"Toolbar appearance" = "Toolbar appearance";
+"Icons only" = "Icons only";
+"Icons and labels" = "Icons and labels";
+"Labels only" = "Labels only";
+"Download file" = "Download";
