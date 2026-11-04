@@ -57,8 +57,9 @@ public struct StrictQueueRecord: Codable, Sendable, Equatable {
               let stats = detail.fileStats,
               entries.count == files.count,
               stats.count == files.count else { return false }
-        return zip(entries, files).allSatisfy { current, expected in
-            current.name == expected.name && current.length == expected.length
+        return zip(entries, files).allSatisfy { pair in
+            let (current, expected) = pair
+            return current.name == expected.name && current.length == expected.length
                 && current.length >= 0
                 && current.bytesCompleted >= 0
                 && current.bytesCompleted <= current.length
