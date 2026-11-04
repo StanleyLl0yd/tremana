@@ -64,6 +64,19 @@ struct ContentView: View {
                         .tag(TorrentFilter.seeding)
                 }
                 .listStyle(.sidebar)
+                if let testVersion = Bundle.main.object(
+                    forInfoDictionaryKey: "TreManaTestVersion"
+                ) as? String {
+                    HStack {
+                        Text("v\(testVersion)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("TreMana test version \(testVersion)")
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+                }
             }
             .navigationTitle("TreMana")
             .toolbar(removing: .sidebarToggle)
