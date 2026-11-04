@@ -209,3 +209,4 @@
 "Disable ordered downloading before changing file selection" = "Чтобы изменить выбор файлов, сначала отключите очередь";
 "OK" = "ОК";
 "Toolbar" = "Панель";
+"Ordered download pending" = "Изменение очереди ожидает подтверждения";

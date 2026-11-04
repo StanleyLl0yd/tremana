@@ -186,7 +186,11 @@ struct TorrentInspectorView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
-                    if model.strictQueueTorrentIDs.contains(detail.id) {
+                    if model.strictQueuePendingIDs.contains(detail.id) {
+                        Label("Ordered download pending", systemImage: "clock")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else if model.strictQueueTorrentIDs.contains(detail.id) {
                         Label("Ordered download active", systemImage: "list.number")
                             .font(.caption2)
                             .foregroundStyle(.secondary)

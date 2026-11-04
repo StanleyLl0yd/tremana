@@ -14,6 +14,7 @@ struct StrictFileQueueRuntimeTests {
         let controller = StrictFileQueueController(defaults: defaults)
         try await controller.setEnabled(true, torrentID: 1, endpoint: endpoint, client: rpc)
         #expect(controller.enabledTorrentIDs(endpoint: endpoint) == Set([1]))
+        #expect(controller.pendingTorrentIDs(endpoint: endpoint).isEmpty)
         #expect(await rpc.wanted() == [true, false, false])
 
         let restarted = StrictFileQueueController(defaults: defaults)
@@ -98,7 +99,9 @@ struct StrictFileQueueRuntimeTests {
         defaults.set(try JSONEncoder().encode(records), forKey: key)
 
         let relaunched = StrictFileQueueController(defaults: defaults)
+        #expect(relaunched.pendingTorrentIDs(endpoint: endpoint) == Set([1]))
         try await relaunched.advance(endpoint: endpoint, client: rpc)
+        #expect(relaunched.pendingTorrentIDs(endpoint: endpoint).isEmpty)
         #expect(await rpc.wanted() == [true, true, true])
         #expect(relaunched.enabledTorrentIDs(endpoint: endpoint).isEmpty)
     }

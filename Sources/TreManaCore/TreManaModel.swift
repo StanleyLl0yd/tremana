@@ -84,6 +84,7 @@ public final class TreManaModel {
     public private(set) var detailErrorMessage: String?
     public private(set) var isLoadingDetail = false
     public private(set) var strictQueueTorrentIDs: Set<Int> = []
+    public private(set) var strictQueuePendingIDs: Set<Int> = []
 
     @ObservationIgnored
     private let makeClient: @MainActor (TransmissionConnection) -> any TransmissionRPCProviding
@@ -280,6 +281,7 @@ public final class TreManaModel {
             noticeMessage = nil
             password = ""
             strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: requestedURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: requestedURL)
 
             guard shouldRemember else { return }
             // Never reuse an existing profile's credential on a changed endpoint.
@@ -595,6 +597,7 @@ public final class TreManaModel {
             )
             guard connectionGeneration == ticket else { return }
             strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
             errorMessage = nil
             noticeMessage = enabled ? "Strict file queue enabled" : "Strict file queue disabled"
             if selectedTorrentIDs == Set([torrentID]) {
@@ -603,6 +606,7 @@ public final class TreManaModel {
         } catch {
             guard connectionGeneration == ticket else { return }
             strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
             errorMessage = error.localizedDescription
         }
     }
@@ -617,6 +621,7 @@ public final class TreManaModel {
             try await strictQueueController.advance(endpoint: rpcURL, client: client)
             guard connectionGeneration == ticket else { return }
             strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
             if selectedTorrentIDs.count == 1 {
                 await loadSelectedTorrentDetails()
             }
@@ -624,6 +629,7 @@ public final class TreManaModel {
         } catch {
             guard connectionGeneration == ticket else { return }
             strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
             errorMessage = "Strict file queue paused: " + error.localizedDescription
         }
     }
@@ -731,6 +737,7 @@ public final class TreManaModel {
                     endpoint: rpcURL, ids: removedIDs
                 )
                 strictQueueTorrentIDs = strictQueueController.enabledTorrentIDs(endpoint: rpcURL)
+            strictQueuePendingIDs = strictQueueController.pendingTorrentIDs(endpoint: rpcURL)
             }
             noticeMessage = deleteLocalData
                 ? "Removed torrent(s) and requested deletion of server data"
@@ -998,6 +1005,7 @@ public final class TreManaModel {
         noticeMessage = nil
         password = ""
         strictQueueTorrentIDs = []
+        strictQueuePendingIDs = []
         isBusy = false
         isRefreshing = false
         mutationGeneration &+= 1

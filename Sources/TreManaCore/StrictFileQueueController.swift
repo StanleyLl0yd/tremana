@@ -26,6 +26,12 @@ public final class StrictFileQueueController {
         Set(records.filter { $0.endpoint == endpoint }.map(\.torrentID))
     }
 
+    public func pendingTorrentIDs(endpoint: String) -> Set<Int> {
+        Set(records.filter {
+            $0.endpoint == endpoint && (!$0.serverSelectionApplied || $0.pendingDisable)
+        }.map(\.torrentID))
+    }
+
     private func save(_ updated: [StrictQueueRecord]) throws {
         let data = try JSONEncoder().encode(updated)
         defaults.set(data, forKey: Self.key)
