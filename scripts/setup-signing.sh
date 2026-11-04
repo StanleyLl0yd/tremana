@@ -162,9 +162,36 @@ for pattern in main 'release/v*'; do
     fi
 done
 
-pinned="$(gh api "$API/variables/TREMANA_CERT_SHA256" --jq .value 2>/dev/null || true)"
-[[ -z "$pinned" || "$pinned" == "$fingerprint" ]] ||
-    fail "GitHub environment already pins a DIFFERENT certificate. Refusing rotation."
+# Never blindly overwrite signing credentials. An older GitHub variable can
+# survive a failed setup where no private signing secrets were uploaded.
+pinned="$(gh api "$API/variables?per_page=100" --jq '.variables[] | select(.name == "TREMANA_CERT_SHA256") | .value')" ||
+    fail "Cannot inspect environment variables. Refusing to upload credentials."
+existing_secrets="$(gh api "$API/secrets?per_page=100" --jq '.secrets[].name')" ||
+    fail "Cannot inspect environment secret names. Refusing to upload credentials."
+if [[ -z "$pinned" ]] &&
+    { grep -Fxq 'TREMANA_CERT_P12_BASE64' <<< "$existing_secrets" ||
+      grep -Fxq 'TREMANA_CERT_PASSWORD' <<< "$existing_secrets"; }; then
+    fail "Signing secrets already exist but the pinned fingerprint is missing. Inspect GitHub before continuing."
+fi
+if [[ -n "$pinned" && "$pinned" != "$fingerprint" ]]; then
+    printf 'Existing GitHub SHA-256 pin: %s\n' "$pinned"
+    printf 'Local TreMana SHA-256 pin:  %s\n' "$fingerprint"
+    if grep -Fxq 'TREMANA_CERT_P12_BASE64' <<< "$existing_secrets" ||
+       grep -Fxq 'TREMANA_CERT_PASSWORD' <<< "$existing_secrets"; then
+        fail "GitHub already holds signing credentials for a different identity. Refusing rotation. Restore the original .p12 or investigate the mismatch."
+    fi
+    echo "The public GitHub pin is stale, but no signing credential secrets exist."
+    echo "Replacing only this orphaned pin is safe if this Mac owns the intended identity."
+    read -r -p "Type REBIND to authorize replacing the stale pin: " approval </dev/tty
+    [[ "$approval" == REBIND ]] ||
+        fail "No changes uploaded. Existing private key is preserved."
+fi
+
+# Commit the public fingerprint first. Re-runs can recover a partial upload
+# without replacing a different already-pinned private identity.
+printf '%s' "$fingerprint" |
+    gh variable set TREMANA_CERT_SHA256 --repo "$REPO" --env "$ENVIRONMENT" ||
+    fail "Failed to pin certificate fingerprint."
 
 base64 < "$P12" | tr -d '\r\n' |
     gh secret set TREMANA_CERT_P12_BASE64 --repo "$REPO" --env "$ENVIRONMENT" ||
@@ -172,9 +199,6 @@ base64 < "$P12" | tr -d '\r\n' |
 printf '%s' "$TREMANA_SIGNING_PASS" |
     gh secret set TREMANA_CERT_PASSWORD --repo "$REPO" --env "$ENVIRONMENT" ||
     fail "Failed to upload the certificate password secret."
-printf '%s' "$fingerprint" |
-    gh variable set TREMANA_CERT_SHA256 --repo "$REPO" --env "$ENVIRONMENT" ||
-    fail "Failed to pin certificate fingerprint."
 unset TREMANA_SIGNING_PASS
 
 echo "TreMana identity uploaded to GitHub Environment '$ENVIRONMENT'."
