@@ -4,7 +4,7 @@ import TreManaCore
 enum TorrentColumn: String, CaseIterable, Identifiable {
     case name, progress, status, download, upload
     case seeds, leeches, eta, ratio, addedDate, totalSize
-    case downloaded, uploaded, remaining, connectedPeers, queuePosition
+    case downloaded, uploaded, remaining, connectedPeers, queuePosition, priority
 
     var id: String { rawValue }
 
@@ -26,13 +26,14 @@ enum TorrentColumn: String, CaseIterable, Identifiable {
         case .remaining: "Remaining"
         case .connectedPeers: "Connected Peers"
         case .queuePosition: "Queue"
+        case .priority: "Priority"
         }
     }
 
     var visibleByDefault: Bool {
         switch self {
-        case .name, .progress, .status, .download, .upload,
-             .seeds, .leeches, .eta, .ratio: true
+        case .name, .totalSize, .progress, .download, .upload,
+             .eta, .ratio, .priority: true
         default: false
         }
     }
@@ -47,7 +48,15 @@ struct TorrentColumnCell: View {
         Group {
             switch column {
             case .name:
-                Text(torrent.name).lineLimit(1).help(torrent.name)
+                HStack(spacing: 7) {
+                    Image(systemName: iconName)
+                        .foregroundStyle(iconColor)
+                        .frame(width: 17)
+                    Text(torrent.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(torrent.name)
+                }
             case .progress:
                 TorrentProgressCell(progress: torrent.percentDone)
             case .status:
@@ -80,10 +89,44 @@ struct TorrentColumnCell: View {
                 metric(torrent.peersConnected)
             case .queuePosition:
                 metric(torrent.queuePosition)
+            case .priority:
+                Text(LocalizedStringKey(torrentPriorityLabel))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help("Based on file priorities")
             }
         }
         .font(.subheadline)
         .lineLimit(1)
+    }
+
+    private var torrentPriorityLabel: String {
+        switch torrent.filePrioritySummary {
+        case .unknown: "—"
+        case .low: "Low"
+        case .normal: "Normal"
+        case .high: "High"
+        case .mixed: "Mixed"
+        }
+    }
+
+    private var iconName: String {
+        switch torrent.status {
+        case 0: "pause.fill"
+        case 4: "play.fill"
+        case 6: "checkmark.circle.fill"
+        case 1, 2: "checkmark.shield"
+        default: "clock"
+        }
+    }
+
+    private var iconColor: Color {
+        switch torrent.status {
+        case 0: .secondary
+        case 4: .blue
+        case 6: .green
+        default: .secondary
+        }
     }
 
     private func metric(_ count: Int?) -> some View {
