@@ -251,9 +251,11 @@ struct TorrentInspectorView: View {
                                     .toggleStyle(.checkbox)
                                     .disabled(model.isBusy || model.strictQueueTorrentIDs.contains(detail.id) || (fileStats.wanted && wantedCount == 1))
                                     .help(LocalizedStringKey(
-                                        fileStats.wanted && wantedCount == 1
-                                            ? "At least one file must remain selected for download"
-                                            : "Include this file in the download"
+                                        model.strictQueueTorrentIDs.contains(detail.id)
+                                            ? "Disable ordered downloading before changing file selection"
+                                            : fileStats.wanted && wantedCount == 1
+                                                ? "At least one file must remain selected for download"
+                                                : "Include this file in the download"
                                     ))
                                     .accessibilityIdentifier("file.wanted.\(index)")
 
