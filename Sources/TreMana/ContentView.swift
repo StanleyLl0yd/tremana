@@ -144,6 +144,19 @@ struct ContentView: View {
                 await model.refreshSwarm()
             }
         }
+        .task(id: refreshLoopIdentity) {
+            guard model.isConnected else { return }
+            await model.advanceStrictFileQueues()
+            while !Task.isCancelled && model.isConnected {
+                do {
+                    try await Task.sleep(for: .seconds(12))
+                } catch {
+                    break
+                }
+                guard !Task.isCancelled, model.isConnected else { break }
+                await model.advanceStrictFileQueues()
+            }
+        }
         .onChange(of: isWindowForeground) { wasForeground, isForeground in
             if !wasForeground && isForeground,
                model.isConnected && autoRefreshEnabled {
@@ -395,6 +408,10 @@ private struct TorrentTableView: View {
     @State private var showingVerifyDialog = false
     @State private var showingRemoveDialog = false
     @State private var remoteActionRequest: RemoteTorrentActionRequest?
+    @State private var queueRequestID: Int?
+    @State private var queueRequestEnabled = false
+    @State private var showingQueueConfirmation = false
+    @State private var showingPiecesLimitation = false
     @SceneStorage("com.sl.tremana.table-columns.v1")
     private var columnCustomization: TableColumnCustomization<TransmissionTorrent>
 
@@ -499,6 +516,30 @@ private struct TorrentTableView: View {
                                 Label("Copy Magnet Link", systemImage: "link")
                             }
 
+                            Divider()
+
+                            Button {
+                                queueRequestID = id
+                                queueRequestEnabled = !model.strictQueueTorrentIDs.contains(id)
+                                showingQueueConfirmation = true
+                            } label: {
+                                Label(
+                                    LocalizedStringKey(model.strictQueueTorrentIDs.contains(id)
+                                        ? "Stop downloading files in order…"
+                                        : "Download files in order…"),
+                                    systemImage: "list.number"
+                                )
+                            }
+                            .disabled(model.isBusy)
+
+                            Button {
+                                showingPiecesLimitation = true
+                            } label: {
+                                Label("Download pieces in order…", systemImage: "rectangle.split.3x1")
+                            }
+
+                            Divider()
+
                             Button {
                                 remoteActionRequest = RemoteTorrentActionRequest(
                                     torrentID: id, kind: .move
@@ -587,6 +628,26 @@ private struct TorrentTableView: View {
             .lineLimit(1)
             .padding(.horizontal, 12)
             .frame(height: 34)
+        }
+        .confirmationDialog(
+            "Strict file queue",
+            isPresented: $showingQueueConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(LocalizedStringKey(queueRequestEnabled
+                ? "Enable ordered file downloading" : "Disable ordered file downloading")) {
+                if let id = queueRequestID {
+                    Task { await model.setStrictFileQueue(torrentID: id, enabled: queueRequestEnabled) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("When enabled, only the current file downloads. The next file starts after completion while TreMana is connected. If the Mac sleeps or the app closes, the next file waits.")
+        }
+        .alert("Sequential pieces unavailable", isPresented: $showingPiecesLimitation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Transmission 3.00 / RPC 16 cannot schedule pieces in order. No setting was changed.")
         }
         .sheet(item: $remoteActionRequest) { request in
             RemoteTorrentActionSheet(request: request)
