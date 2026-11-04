@@ -79,6 +79,30 @@ struct StrictFileQueueRuntimeTests {
         #expect(controller.enabledTorrentIDs(endpoint: endpoint) == Set([1, 2]))
     }
 
+    @Test @MainActor func interruptedDisableResumesSafelyAfterRestart() async throws {
+        let name = "TreMana.StrictQueue.PendingDisable.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+
+        let rpc = QueueMockRPC()
+        let endpoint = "https://home.example/transmission/rpc"
+        let controller = StrictFileQueueController(defaults: defaults)
+        try await controller.setEnabled(true, torrentID: 1, endpoint: endpoint, client: rpc)
+        #expect(await rpc.wanted() == [true, false, false])
+
+        let key = "com.sl.tremana.strict-file-queues.v1"
+        let encoded = try #require(defaults.data(forKey: key))
+        var records = try JSONDecoder().decode([StrictQueueRecord].self, from: encoded)
+        #expect(records.count == 1)
+        records[0].pendingDisable = true
+        defaults.set(try JSONEncoder().encode(records), forKey: key)
+
+        let relaunched = StrictFileQueueController(defaults: defaults)
+        try await relaunched.advance(endpoint: endpoint, client: rpc)
+        #expect(await rpc.wanted() == [true, true, true])
+        #expect(relaunched.enabledTorrentIDs(endpoint: endpoint).isEmpty)
+    }
+
     @Test @MainActor func userCanDisableAndRestoreSelection() async throws {
         let name = "TreMana.StrictQueue.Disable.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))
