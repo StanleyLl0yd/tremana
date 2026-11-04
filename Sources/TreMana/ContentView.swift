@@ -249,13 +249,23 @@ private struct TorrentCommandBar: View {
     let revealSidebar: () -> Void
     let add: () -> Void
     @Binding var presentation: String
+    @Binding var searchText: String
 
     private var selectedPresentation: ToolbarPresentation {
         ToolbarPresentation(rawValue: presentation) ?? .iconsAndLabels
     }
 
+    private var connectionName: String {
+        if let profile = model.savedProfiles.first(where: {
+            $0.id == model.selectedProfileID
+        }) {
+            return profile.name
+        }
+        return URL(string: model.rpcURL)?.host ?? "Transmission"
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             if showSidebar {
                 ToolbarActionButton(
                     title: "Show Sidebar", symbol: "sidebar.left",
@@ -263,12 +273,35 @@ private struct TorrentCommandBar: View {
                 )
             }
 
-            ToolbarActionButton(
-                title: "Disconnect", symbol: "network.slash",
-                presentation: selectedPresentation
-            ) {
-                model.disconnect()
+            Menu {
+                Button {
+                    model.disconnect()
+                } label: {
+                    Label("Disconnect", systemImage: "network.slash")
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 7, height: 7)
+                    Text(connectionName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+                .padding(.horizontal, 9)
+                .frame(height: 28)
+                .background(.ultraThinMaterial, in: Capsule())
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: 185)
+            .help("Connection")
+            .accessibilityLabel("Connection")
+
             Divider().frame(height: 18)
 
             ToolbarActionButton(
@@ -294,39 +327,20 @@ private struct TorrentCommandBar: View {
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 6)
 
-            Menu {
-                Picker("Toolbar appearance", selection: $presentation) {
-                    ForEach(ToolbarPresentation.allCases) { option in
-                        Text(LocalizedStringKey(option.title))
-                            .tag(option.rawValue)
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    if selectedPresentation != .labels {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    if selectedPresentation != .icons {
-                        Text("Toolbar")
-                            .lineLimit(1)
-                    }
-                }
-                .frame(minHeight: 28)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Toolbar appearance")
-            .accessibilityLabel("Toolbar appearance")
+            TextField("Search torrents", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 112, idealWidth: 165, maxWidth: 190)
+                .accessibilityLabel("Search torrents")
         }
         .font(.subheadline)
         .padding(.horizontal, 15)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17))
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
         .accessibilityElement(children: .contain)
     }
 }
