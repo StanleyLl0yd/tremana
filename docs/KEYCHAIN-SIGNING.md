@@ -29,9 +29,21 @@ On first run it:
 5. **Does not run a release or change a published Git tag.**
 
 On subsequent runs it reuses the SAME `.p12` and certificate and checks the
-saved public certificate and GitHub's pinned fingerprint. A wrong password,
-missing half of an existing identity or changed fingerprint causes a hard error.
-It cannot rotate keys silently.
+saved public certificate and GitHub's pinned fingerprint. A wrong password or
+missing half of an existing identity causes a hard error. It cannot rotate
+keys silently.
+
+If GitHub contains an **old pinned fingerprint** but neither signing secret
+was uploaded (for example, from an interrupted prior setup), the script displays
+both public fingerprints and asks you to type `REBIND` before replacing this
+orphaned public pin. It never generates a second key during this recovery. If
+GitHub already has signing secrets from a different identity, it **refuses
+replacement**: find the previous encrypted `.p12` or investigate the mismatch.
+There is no unattended reset and no option to override this restriction.
+
+If setup stopped after creating the certificate, rerun the newer pinned
+`setup-signing.sh` file. When asked for the *existing* password, use the one
+chosen on the first run; do not delete `TreMana-Code-Signing.p12` or `.cer`.
 
 The script is based on the **corrected** lueya setup and specifically avoids
 the unsupported `openssl x509 -ext` parameter from the original script:
