@@ -182,3 +182,4 @@
 "Transmission did not confirm the operation." = "Transmission не подтвердил операцию.";
 "Server move confirmed" = "Перемещение данных на сервере подтверждено";
 "Server path rename confirmed" = "Переименование пути на сервере подтверждено";
+\n"Priority" = "Приоритет";\n"Low" = "Низкий";\n"Normal" = "Обычный";\n"High" = "Высокий";\n"Files to download" = "Файлы для загрузки";\n"File priority updated" = "Приоритет файла обновлён";\n"Toolbar appearance" = "Вид панели команд";\n"Icons only" = "Только значки";\n"Icons and labels" = "Значки и подписи";\n"Labels only" = "Только подписи";

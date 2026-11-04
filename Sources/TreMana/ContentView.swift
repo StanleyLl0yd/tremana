@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var filter: TorrentFilter? = .all
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingAddTorrent = false
+    @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
 
     private var refreshConfiguration: RefreshConfiguration {
         RefreshConfiguration(
@@ -55,15 +56,19 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                List(selection: $filter) {
-                    Label("All Torrents", systemImage: "tray.full")
-                        .tag(TorrentFilter.all)
-                    Label("Downloading", systemImage: "arrow.down.circle")
-                        .tag(TorrentFilter.downloading)
-                    Label("Seeding", systemImage: "arrow.up.circle")
-                        .tag(TorrentFilter.seeding)
+                if model.isConnected {
+                    List(selection: $filter) {
+                        Label("All Torrents", systemImage: "tray.full")
+                            .tag(TorrentFilter.all)
+                        Label("Downloading", systemImage: "arrow.down.circle")
+                            .tag(TorrentFilter.downloading)
+                        Label("Seeding", systemImage: "arrow.up.circle")
+                            .tag(TorrentFilter.seeding)
+                    }
+                    .listStyle(.sidebar)
+                } else {
+                    Spacer()
                 }
-                .listStyle(.sidebar)
                 if let version = Bundle.main.object(
                     forInfoDictionaryKey: "CFBundleShortVersionString"
                 ) as? String {
@@ -86,7 +91,8 @@ struct ContentView: View {
                     TorrentCommandBar(
                         showSidebar: columnVisibility == .detailOnly,
                         revealSidebar: { columnVisibility = .all },
-                        add: { showingAddTorrent = true }
+                        add: { showingAddTorrent = true },
+                        presentation: $toolbarPresentation
                     )
                     Divider()
                     TorrentTableView(filter: filter ?? .all)
@@ -154,68 +160,129 @@ struct ContentView: View {
     }
 }
 
+private enum ToolbarPresentation: String, CaseIterable, Identifiable {
+    case icons = "icons"
+    case iconsAndLabels = "icons-and-labels"
+    case labels = "labels"
+
+    static let storageKey = "com.sl.tremana.toolbarPresentation"
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .icons: "Icons only"
+        case .iconsAndLabels: "Icons and labels"
+        case .labels: "Labels only"
+        }
+    }
+}
+
 private struct TorrentCommandBar: View {
     @Environment(TreManaModel.self) private var model
 
     let showSidebar: Bool
     let revealSidebar: () -> Void
     let add: () -> Void
+    @Binding var presentation: String
+
+    private var selectedPresentation: ToolbarPresentation {
+        ToolbarPresentation(rawValue: presentation) ?? .iconsAndLabels
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             if showSidebar {
-                IconCommandButton(title: "Show Sidebar", symbol: "sidebar.left", action: revealSidebar)
+                ToolbarActionButton(
+                    title: "Show Sidebar", symbol: "sidebar.left",
+                    presentation: selectedPresentation, action: revealSidebar
+                )
             }
 
-            Button(action: add) {
-                Label("Add Torrent", systemImage: "plus")
+            ToolbarActionButton(
+                title: "Disconnect", symbol: "network.slash",
+                presentation: selectedPresentation
+            ) {
+                model.disconnect()
             }
-            .buttonStyle(.bordered)
+            Divider().frame(height: 18)
+
+            ToolbarActionButton(
+                title: "Add Torrent", symbol: "plus",
+                presentation: selectedPresentation, action: add
+            )
             .disabled(model.isBusy)
-            .help("Add Torrent")
             .accessibilityIdentifier("toolbar.add-torrent")
 
-            Divider()
-                .frame(height: 20)
-
-            IconCommandButton(title: "Start", symbol: "play.fill") {
+            ToolbarActionButton(
+                title: "Start", symbol: "play.fill",
+                presentation: selectedPresentation
+            ) {
                 Task { await model.perform(.start) }
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
 
-            IconCommandButton(title: "Pause", symbol: "pause.fill") {
+            ToolbarActionButton(
+                title: "Pause", symbol: "pause.fill",
+                presentation: selectedPresentation
+            ) {
                 Task { await model.perform(.stop) }
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 0)
 
-            IconCommandButton(title: "Disconnect", symbol: "network.slash") {
-                model.disconnect()
+            Menu {
+                Picker("Toolbar appearance", selection: $presentation) {
+                    ForEach(ToolbarPresentation.allCases) { option in
+                        Text(LocalizedStringKey(option.title))
+                            .tag(option.rawValue)
+                    }
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .frame(width: 28, height: 28)
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Toolbar appearance")
+            .accessibilityLabel("Toolbar appearance")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .font(.subheadline)
+        .padding(.horizontal, 15)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .accessibilityElement(children: .contain)
     }
 }
 
-private struct IconCommandButton: View {
-    let title: LocalizedStringKey
+private struct ToolbarActionButton: View {
+    let title: String
     let symbol: String
+    let presentation: ToolbarPresentation
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .frame(width: 30, height: 30)
-                .contentShape(Rectangle())
+            HStack(spacing: 7) {
+                if presentation != .labels {
+                    Image(systemName: symbol)
+                        .font(.system(size: 14, weight: .medium))
+                }
+                if presentation != .icons {
+                    Text(LocalizedStringKey(title))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(minHeight: 27)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help(title)
-        .accessibilityLabel(title)
+        .help(LocalizedStringKey(title))
+        .accessibilityLabel(LocalizedStringKey(title))
     }
 }
 
@@ -227,30 +294,36 @@ private struct ConnectionView: View {
 
         Form {
             Section {
-                HStack(spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     ConnectionHero()
-
-                    Button {
-                        Task { await model.connect() }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if model.isBusy {
-                                ProgressView()
-                                    .controlSize(.small)
+                    HStack {
+                        Button {
+                            Task { await model.connect() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if model.isBusy {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "network")
+                                }
+                                Text("Connect")
                             }
-                            Text("Connect")
                         }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(
+                            model.isConnected || model.isBusy || model.profilesBusy
+                                || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                        .help("Connect")
+                        .accessibilityIdentifier("connection.primary-connect")
+                        Spacer()
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(
-                        model.isConnected || model.isBusy || model.profilesBusy
-                            || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-                    .help("Connect")
-                    .accessibilityIdentifier("connection.primary-connect")
                 }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
             }
             Section("Saved Profiles") {
                 Picker("Profile", selection: $form.selectedProfileID) {

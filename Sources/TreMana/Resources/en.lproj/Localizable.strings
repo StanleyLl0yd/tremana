@@ -182,3 +182,4 @@
 "Transmission did not confirm the operation." = "Transmission did not confirm the operation.";
 "Server move confirmed" = "Server move confirmed";
 "Server path rename confirmed" = "Server path rename confirmed";
+\n"Priority" = "Priority";\n"Low" = "Low";\n"Normal" = "Normal";\n"High" = "High";\n"Files to download" = "Files to download";\n"File priority updated" = "File priority updated";\n"Toolbar appearance" = "Toolbar appearance";\n"Icons only" = "Icons only";\n"Icons and labels" = "Icons and labels";\n"Labels only" = "Labels only";

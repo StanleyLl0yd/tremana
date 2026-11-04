@@ -13,6 +13,7 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
     case invalidFileSelection
     case lastWantedFile
     case fileSelectionChanged
+    case invalidFilePriority
     case invalidMagnetLink
     case invalidTorrentMetainfo
     case invalidTorrentAddReply
@@ -48,6 +49,8 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
             "At least one file must remain selected for download."
         case .fileSelectionChanged:
             "File selection changed on the server. Refresh and try again."
+        case .invalidFilePriority:
+            "File priority changed or is invalid. Refresh and try again."
         case .invalidMagnetLink:
             "Enter a valid BitTorrent v1 magnet link with an info hash."
         case .invalidTorrentMetainfo:
@@ -215,6 +218,28 @@ public actor TransmissionRPCClient {
         // Each RPC changes exactly one 0-based file index. Never pass an empty
         // file array, which legacy Transmission can interpret as all files.
         let field = wanted ? "files-wanted" : "files-unwanted"
+        let _: RPCReply<EmptyRPCArguments> = try await send(
+            "torrent-set",
+            arguments: [
+                "ids": .array([.integer(torrentID)]),
+                field: .array([.integer(fileIndex)])
+            ]
+        )
+    }
+
+    public func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws {
+        guard torrentID > 0 else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        guard fileIndex >= 0, (-1...1).contains(priority) else {
+            throw TransmissionRPCError.invalidFilePriority
+        }
+        let field: String
+        switch priority {
+        case -1: field = "priority-low"
+        case 1: field = "priority-high"
+        default: field = "priority-normal"
+        }
         let _: RPCReply<EmptyRPCArguments> = try await send(
             "torrent-set",
             arguments: [

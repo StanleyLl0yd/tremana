@@ -7,6 +7,7 @@ public protocol TransmissionRPCProviding: Sendable {
     func torrentSwarm() async throws -> [Int: TorrentSwarmCounts]
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws
+    func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws
     func moveTorrent(torrentID: Int, destination: String) async throws
     func renameTorrentPath(torrentID: Int, path: String, name: String) async throws
     func perform(_ action: TorrentAction, ids: [Int]) async throws
@@ -18,6 +19,10 @@ public protocol TransmissionRPCProviding: Sendable {
 extension TransmissionRPCProviding {
     public func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws {
         throw TransmissionRPCError.invalidFileSelection
+    }
+
+    public func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws {
+        throw TransmissionRPCError.invalidFilePriority
     }
 
     public func moveTorrent(torrentID: Int, destination: String) async throws {
@@ -453,6 +458,95 @@ public final class TreManaModel {
             }
             errorMessage = nil
             noticeMessage = "File selection updated"
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            errorMessage = error.localizedDescription
+            noticeMessage = nil
+            if selectedTorrentDetail == nil {
+                detailErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    public func setFilePriority(
+        torrentID: Int,
+        fileIndex: Int,
+        priority: Int,
+        expectedPriority: Int
+    ) async {
+        guard let client, !isBusy else { return }
+        guard (-1...1).contains(priority),
+              (-1...1).contains(expectedPriority),
+              priority != expectedPriority,
+              torrentID > 0,
+              selectedTorrentIDs == Set([torrentID]),
+              torrents.contains(where: { $0.id == torrentID }),
+              let displayed = selectedTorrentDetail,
+              displayed.id == torrentID,
+              let displayedFiles = displayed.files,
+              let displayedStats = displayed.fileStats,
+              displayedFiles.count == displayedStats.count,
+              displayedFiles.indices.contains(fileIndex),
+              displayedStats[fileIndex].priority == expectedPriority else {
+            errorMessage = TransmissionRPCError.invalidFilePriority.localizedDescription
+            return
+        }
+
+        mutationGeneration &+= 1
+        detailGeneration &+= 1
+        isLoadingDetail = false
+        detailErrorMessage = nil
+        let ticket = connectionGeneration
+        isBusy = true
+        editingFileSelectionForID = torrentID
+        defer {
+            if connectionGeneration == ticket {
+                editingFileSelectionForID = nil
+                isBusy = false
+            }
+        }
+
+        do {
+            let current = try await client.torrentDetails(id: torrentID)
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            guard let current,
+                  current.hashString == displayed.hashString,
+                  let files = current.files,
+                  let stats = current.fileStats,
+                  files.count == stats.count,
+                  files.count == displayedFiles.count,
+                  files.indices.contains(fileIndex),
+                  files[fileIndex].name == displayedFiles[fileIndex].name,
+                  files[fileIndex].length == displayedFiles[fileIndex].length else {
+                throw TransmissionRPCError.invalidFileSelection
+            }
+            guard stats[fileIndex].priority == expectedPriority else {
+                selectedTorrentDetail = current
+                throw TransmissionRPCError.invalidFilePriority
+            }
+
+            try await client.setFilePriority(
+                torrentID: torrentID, fileIndex: fileIndex, priority: priority
+            )
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+
+            selectedTorrentDetail = nil
+            let refreshed = try await client.torrentDetails(id: torrentID)
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            guard let refreshed,
+                  let verified = refreshed.fileStats,
+                  verified.indices.contains(fileIndex) else {
+                throw TransmissionRPCError.invalidFileSelection
+            }
+            selectedTorrentDetail = refreshed
+            guard verified[fileIndex].priority == priority else {
+                throw TransmissionRPCError.invalidFilePriority
+            }
+            errorMessage = nil
+            noticeMessage = "File priority updated"
         } catch {
             guard connectionGeneration == ticket else { return }
             errorMessage = error.localizedDescription
