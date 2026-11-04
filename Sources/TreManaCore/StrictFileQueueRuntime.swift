@@ -14,6 +14,7 @@ public struct StrictQueueRecord: Codable, Sendable, Equatable {
     public var activeFileIndex: Int
     public var pendingPreviousFileIndex: Int?
     public var serverSelectionApplied: Bool
+    public var pendingDisable: Bool
 
     public init(endpoint: String, detail: TransmissionTorrentDetail) throws {
         guard !endpoint.isEmpty,
@@ -50,6 +51,7 @@ public struct StrictQueueRecord: Codable, Sendable, Equatable {
         activeFileIndex = active
         pendingPreviousFileIndex = nil
         serverSelectionApplied = false
+        pendingDisable = false
     }
 
     public func matches(_ detail: TransmissionTorrentDetail) -> Bool {

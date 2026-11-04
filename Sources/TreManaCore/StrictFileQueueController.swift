@@ -72,19 +72,14 @@ public final class StrictFileQueueController {
         } else if let existing {
             guard let detail = try await client.torrentDetails(id: torrentID),
                   existing.matches(detail),
-                  existing.acceptsObservedWanted(detail) else {
+                  existing.acceptsObservedWanted(detail)
+                    || existing.wantedMatches(detail, active: nil) else {
                 throw TransmissionRPCError.fileSelectionChanged
             }
-            try await client.setQueueFileSelection(
-                torrentID: torrentID,
-                wanted: existing.orderedSelectedIndices,
-                unwanted: existing.originalUnwantedIndices
-            )
-            guard let confirmed = try await client.torrentDetails(id: torrentID),
-                  existing.wantedMatches(confirmed, active: nil) else {
-                throw TransmissionRPCError.fileSelectionChanged
-            }
-            try forget(existing)
+            var pending = existing
+            pending.pendingDisable = true
+            try put(pending)
+            try await reconcile(pending, client: client)
         }
     }
 
@@ -116,6 +111,25 @@ public final class StrictFileQueueController {
         }
         guard record.matches(detail) else {
             throw TransmissionRPCError.fileSelectionChanged
+        }
+        if record.pendingDisable {
+            guard record.acceptsObservedWanted(detail)
+                || record.wantedMatches(detail, active: nil) else {
+                throw TransmissionRPCError.fileSelectionChanged
+            }
+            if !record.wantedMatches(detail, active: nil) {
+                try await client.setQueueFileSelection(
+                    torrentID: record.torrentID,
+                    wanted: record.orderedSelectedIndices,
+                    unwanted: record.originalUnwantedIndices
+                )
+                guard let confirmed = try await client.torrentDetails(id: record.torrentID),
+                      record.wantedMatches(confirmed, active: nil) else {
+                    throw TransmissionRPCError.fileSelectionChanged
+                }
+            }
+            try forget(record)
+            return
         }
         let plan = try record.plan(for: detail)
         if plan.isFinished && record.wantedMatches(detail, active: nil) {
