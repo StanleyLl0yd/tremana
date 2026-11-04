@@ -55,6 +55,15 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Validate signing bootstrap syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/setup-signing.sh
+          bash -n scripts/import-signing-identity.sh
+          bash -n scripts/verify-signing-identity.sh
+          bash -n scripts/package-app.sh
+
       - name: Compile and test exact preview commit
         shell: bash
         run: |

@@ -128,8 +128,19 @@ openssl x509 -in "$tmp/extracted.pem" -noout -subject -dates
 
 # The protected signing environment accepts ONLY main and release/v* branches.
 if gh api "$API" >/dev/null 2>&1; then
-    [[ "$(gh api "$API" --jq '.deployment_branch_policy.custom_branch_policies')" == true ]] ||
-        fail "Existing environment has incompatible branch restrictions; fix manually."
+    mode="$(gh api "$API" --jq 'if .deployment_branch_policy == null then "unrestricted" elif .deployment_branch_policy.custom_branch_policies == true then "selected" else "incompatible" end')"
+    case "$mode" in
+        selected) ;;
+        unrestricted)
+            # GitHub may auto-create an unrestricted environment on first CI run.
+            # Restrict it BEFORE uploading any certificate secrets.
+            printf '%s' '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' |
+                gh api --method PUT "$API" --input - >/dev/null ||
+                fail "Unable to restrict the existing signing environment."
+            echo "Restricted previously unconfigured GitHub Environment."
+            ;;
+        *) fail "Existing environment has incompatible branch restrictions; fix manually." ;;
+    esac
 else
     printf '%s' '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' |
         gh api --method PUT "$API" --input - >/dev/null ||
