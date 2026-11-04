@@ -609,6 +609,7 @@ public final class TreManaModel {
         let ticket = connectionGeneration
         isBusy = true
         mutationGeneration &+= 1
+        var mutationStarted = false
         defer {
             if connectionGeneration == ticket { isBusy = false }
         }
@@ -621,6 +622,7 @@ public final class TreManaModel {
             }
             _ = try await confirmedRemoteSnapshot(expected: expected, client: client)
             guard connectionGeneration == ticket else { return false }
+            mutationStarted = true
             try await client.moveTorrent(torrentID: expected.id, destination: location)
             guard connectionGeneration == ticket else { return false }
             let verified = try await client.torrentDetails(id: expected.id)
@@ -635,7 +637,7 @@ public final class TreManaModel {
             return connectionGeneration == ticket
         } catch {
             guard connectionGeneration == ticket else { return false }
-            errorMessage = error.localizedDescription
+            errorMessage = remoteActionError(error, mutationStarted: mutationStarted)
             noticeMessage = nil
             return false
         }
@@ -655,6 +657,7 @@ public final class TreManaModel {
         let ticket = connectionGeneration
         isBusy = true
         mutationGeneration &+= 1
+        var mutationStarted = false
         defer {
             if connectionGeneration == ticket { isBusy = false }
         }
@@ -676,6 +679,7 @@ public final class TreManaModel {
                 throw TransmissionRPCError.remoteStateChanged
             }
 
+            mutationStarted = true
             try await client.renameTorrentPath(
                 torrentID: expected.id, path: oldPath, name: newName
             )
@@ -693,10 +697,23 @@ public final class TreManaModel {
             return connectionGeneration == ticket
         } catch {
             guard connectionGeneration == ticket else { return false }
-            errorMessage = error.localizedDescription
+            errorMessage = remoteActionError(error, mutationStarted: mutationStarted)
             noticeMessage = nil
             return false
         }
+    }
+
+    private func remoteActionError(_ error: Error, mutationStarted: Bool) -> String {
+        guard mutationStarted else { return error.localizedDescription }
+        if let remoteError = error as? TransmissionRPCError {
+            switch remoteError {
+            case .serverError(_), .unauthorized:
+                return remoteError.localizedDescription
+            default:
+                break
+            }
+        }
+        return TransmissionRPCError.remoteMutationUnverified.localizedDescription
     }
 
     private func confirmedRemoteSnapshot(

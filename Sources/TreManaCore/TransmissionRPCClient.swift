@@ -20,6 +20,7 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
     case invalidRenameName
     case remoteStateChanged
     case invalidRenameReply
+    case remoteMutationUnverified
 
     public var errorDescription: String? {
         switch self {
@@ -61,6 +62,8 @@ public enum TransmissionRPCError: Error, LocalizedError, Equatable, Sendable {
             "The torrent or its server path changed. Reopen this action and confirm the latest details."
         case .invalidRenameReply:
             "Transmission did not confirm the renamed torrent path."
+        case .remoteMutationUnverified:
+            "The server operation may have completed, but TreMana could not verify it. Check Transmission before retrying."
         }
     }
 }

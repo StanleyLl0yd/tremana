@@ -597,6 +597,24 @@ struct TreManaModelTests {
     }
 
 
+
+    @Test @MainActor func moveVerificationFailureWarnsOperationMayHaveApplied() async throws {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)],
+            failPostMoveDetail: true
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        let snapshot = try #require(await model.remoteActionDetail(for: 1))
+
+        let success = await model.moveTorrent(to: "/mnt/other", expected: snapshot)
+        #expect(!success)
+        #expect(await remote.remoteMoveCalls().count == 1)
+        #expect(model.errorMessage ==
+                TransmissionRPCError.remoteMutationUnverified.localizedDescription)
+    }
+
     @Test @MainActor func disconnectDuringRemoteMoveDoesNotRestoreOldUI() async throws {
         let remote = ControlledRPC(hold: .remoteMove, torrents: [fixtureTorrent(1)])
         let model = TreManaModel(makeClient: { _ in remote })
@@ -665,6 +683,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private var moves: [(torrentID: Int, destination: String)] = []
     private var renames: [(torrentID: Int, path: String, name: String)] = []
     private let rejectFileChanges: Bool
+    private let failPostMoveDetail: Bool
     private var changedFiles: [(torrentID: Int, fileIndex: Int, wanted: Bool)] = []
     private var torrentCalls = 0
     private var recordedActions: [(method: String, ids: [Int])] = []
@@ -680,12 +699,14 @@ private actor ControlledRPC: TransmissionRPCProviding {
         hold: Hold,
         torrents: [TransmissionTorrent],
         wantedStates: [Bool]? = nil,
-        rejectFileChanges: Bool = false
+        rejectFileChanges: Bool = false,
+        failPostMoveDetail: Bool = false
     ) {
         self.hold = hold
         self.contents = torrents
         self.wantedStates = wantedStates
         self.rejectFileChanges = rejectFileChanges
+        self.failPostMoveDetail = failPostMoveDetail
     }
 
     func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws {
@@ -759,6 +780,9 @@ private actor ControlledRPC: TransmissionRPCProviding {
     }
 
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail? {
+        if failPostMoveDetail && !moves.isEmpty {
+            throw TransmissionRPCError.unexpectedStatus(503)
+        }
         if hold == .detail && id == 1 {
             return await withCheckedContinuation { continuation in
                 detailContinuation = continuation
