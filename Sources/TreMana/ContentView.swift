@@ -64,14 +64,14 @@ struct ContentView: View {
                         .tag(TorrentFilter.seeding)
                 }
                 .listStyle(.sidebar)
-                if let testVersion = Bundle.main.object(
-                    forInfoDictionaryKey: "TreManaTestVersion"
+                if let version = Bundle.main.object(
+                    forInfoDictionaryKey: "CFBundleShortVersionString"
                 ) as? String {
                     HStack {
-                        Text(testVersion)
+                        Text(version)
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .accessibilityLabel("TreMana version \(testVersion)")
+                            .accessibilityLabel("TreMana version \(version)")
                         Spacer()
                     }
                     .padding(.horizontal, 14)
@@ -82,13 +82,13 @@ struct ContentView: View {
             .toolbar(removing: .sidebarToggle)
         } detail: {
             VStack(spacing: 0) {
-                TorrentCommandBar(
-                    showSidebar: columnVisibility == .detailOnly,
-                    revealSidebar: { columnVisibility = .all },
-                    add: { showingAddTorrent = true }
-                )
-                Divider()
                 if model.isConnected {
+                    TorrentCommandBar(
+                        showSidebar: columnVisibility == .detailOnly,
+                        revealSidebar: { columnVisibility = .all },
+                        add: { showingAddTorrent = true }
+                    )
+                    Divider()
                     TorrentTableView(filter: filter ?? .all)
                 } else {
                     if columnVisibility == .detailOnly {
@@ -162,67 +162,60 @@ private struct TorrentCommandBar: View {
     let add: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            CommandButton(title: "Connect", symbol: "network") {
-                Task { await model.connect() }
-            }
-            .disabled(
-                model.isConnected || model.isBusy || model.profilesBusy
-                    || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            )
-            CommandButton(title: "Disconnect", symbol: "network.slash") {
-                model.disconnect()
-            }
-            .disabled(!model.isConnected && !model.isBusy)
-
+        HStack(spacing: 12) {
             if showSidebar {
-                Button(action: revealSidebar) {
-                    Label("Show Sidebar", systemImage: "sidebar.left")
-                }
-                .help("Show Sidebar")
+                IconCommandButton(title: "Show Sidebar", symbol: "sidebar.left", action: revealSidebar)
             }
-            CommandButton(title: "Add Torrent", symbol: "plus", action: add)
-                .disabled(model.isBusy)
-            CommandButton(title: "Start", symbol: "play.fill") {
+
+            Button(action: add) {
+                Label("Add Torrent", systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isBusy)
+            .help("Add Torrent")
+            .accessibilityIdentifier("toolbar.add-torrent")
+
+            Divider()
+                .frame(height: 20)
+
+            IconCommandButton(title: "Start", symbol: "play.fill") {
                 Task { await model.perform(.start) }
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-            CommandButton(title: "Pause", symbol: "pause.fill") {
+
+            IconCommandButton(title: "Pause", symbol: "pause.fill") {
                 Task { await model.perform(.stop) }
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
-            Spacer(minLength: 0)
+
+            Spacer(minLength: 8)
+
+            IconCommandButton(title: "Disconnect", symbol: "network.slash") {
+                model.disconnect()
+            }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
     }
 }
 
-private struct CommandButton: View {
-    let title: String
+private struct IconCommandButton: View {
+    let title: LocalizedStringKey
     let symbol: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .medium))
-                    .frame(height: 18)
-                Text(LocalizedStringKey(title))
-                    .font(.caption2.weight(.medium))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            .frame(width: 68, height: 42)
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help(LocalizedStringKey(title))
-        .accessibilityLabel(LocalizedStringKey(title))
+        .help(title)
+        .accessibilityLabel(title)
     }
 }
 
@@ -234,7 +227,30 @@ private struct ConnectionView: View {
 
         Form {
             Section {
-                ConnectionHero()
+                HStack(spacing: 18) {
+                    ConnectionHero()
+
+                    Button {
+                        Task { await model.connect() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if model.isBusy {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text("Connect")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(
+                        model.isConnected || model.isBusy || model.profilesBusy
+                            || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    .help("Connect")
+                    .accessibilityIdentifier("connection.primary-connect")
+                }
             }
             Section("Saved Profiles") {
                 Picker("Profile", selection: $form.selectedProfileID) {
@@ -337,19 +353,6 @@ private struct TorrentTableView: View {
         @Bindable var observedModel = model
 
         VStack(spacing: 0) {
-            HStack(spacing: 9) {
-                Text("Torrents")
-                    .font(.headline)
-                Text(model.torrents.count, format: .number)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-
-            Divider()
-
             if inspectorExpanded {
                 TorrentInspectorView(isExpanded: $inspectorExpanded, selectedTab: $inspectorTab)
                     .frame(maxHeight: .infinity)
@@ -512,7 +515,6 @@ private struct TorrentTableView: View {
             .padding(.horizontal, 12)
             .frame(height: 34)
         }
-        .navigationTitle("Torrents")
         .sheet(item: $remoteActionRequest) { request in
             RemoteTorrentActionSheet(request: request)
         }
