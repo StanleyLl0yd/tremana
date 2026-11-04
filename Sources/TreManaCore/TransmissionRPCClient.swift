@@ -249,6 +249,36 @@ public actor TransmissionRPCClient {
         )
     }
 
+    public func setQueueFileSelection(
+        torrentID: Int, wanted: [Int], unwanted: [Int]
+    ) async throws {
+        guard torrentID > 0 else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        let wantedSet = Set(wanted)
+        let unwantedSet = Set(unwanted)
+        guard !wanted.isEmpty,
+              wantedSet.count == wanted.count,
+              unwantedSet.count == unwanted.count,
+              wanted.allSatisfy({ $0 >= 0 }),
+              unwanted.allSatisfy({ $0 >= 0 }),
+              wantedSet.isDisjoint(with: unwantedSet) else {
+            throw TransmissionRPCError.invalidFileSelection
+        }
+
+        var arguments: [String: RPCValue] = [
+            "ids": .array([.integer(torrentID)]),
+            "files-wanted": .array(wanted.map { .integer($0) })
+        ]
+        // RPC 16 interprets an empty file index array as ALL FILES.
+        if !unwanted.isEmpty {
+            arguments["files-unwanted"] = .array(unwanted.map { .integer($0) })
+        }
+        let _: RPCReply<EmptyRPCArguments> = try await send(
+            "torrent-set", arguments: arguments
+        )
+    }
+
     public func moveTorrent(torrentID: Int, destination: String) async throws {
         guard torrentID > 0 else {
             throw TransmissionRPCError.invalidTorrentSelection
