@@ -465,6 +465,37 @@ struct TransmissionRPCTests {
         #expect(MockURLProtocol.responses.requestCount == 0)
     }
 
+    @Test func strictQueueRPCUsesExplicitFileIndices() async throws {
+        MockURLProtocol.responses.replace([MockResponse(body: #"{"result":"success"}"#)])
+        let client = try makeClient()
+        try await client.setQueueFileSelection(torrentID: 7, wanted: [1], unwanted: [0, 2])
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-set")
+        let args = try #require(request["arguments"] as? [String: Any])
+        #expect(args["ids"] as? [Int] == [7])
+        #expect(args["files-wanted"] as? [Int] == [1])
+        #expect(args["files-unwanted"] as? [Int] == [0, 2])
+        #expect(args["priority-high"] == nil)
+    }
+
+    @Test func strictQueueNeverEmitsEmptyWantedArray() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for (wanted, unwanted) in [
+            ([Int](), [0]), ([1], [1]), ([-1], [0]), ([1, 1], [0])
+        ] {
+            do {
+                try await client.setQueueFileSelection(
+                    torrentID: 7, wanted: wanted, unwanted: unwanted
+                )
+                Issue.record("Invalid strict selection was accepted")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidFileSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
     @Test func invalidFileSelectionNeverContactsDaemon() async throws {
         MockURLProtocol.responses.replace([])
         let client = try makeClient()
