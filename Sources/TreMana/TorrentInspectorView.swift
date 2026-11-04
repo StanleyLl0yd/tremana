@@ -244,7 +244,7 @@ struct TorrentInspectorView: View {
                                         }
                                     ))
                                     .toggleStyle(.checkbox)
-                                    .disabled(model.isBusy || (fileStats.wanted && wantedCount == 1))
+                                    .disabled(model.isBusy || model.strictQueueTorrentIDs.contains(detail.id) || (fileStats.wanted && wantedCount == 1))
                                     .help(LocalizedStringKey(
                                         fileStats.wanted && wantedCount == 1
                                             ? "At least one file must remain selected for download"
