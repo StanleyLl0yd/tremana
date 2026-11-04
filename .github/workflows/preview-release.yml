@@ -61,6 +61,13 @@ jobs:
           python3 scripts/validate-localizations.py
           swift test --parallel
 
+      - name: Import optional stable signing identity
+        shell: bash
+        env:
+          TREMANA_CERT_P12_BASE64: ${{ secrets.TREMANA_CERT_P12_BASE64 }}
+          TREMANA_CERT_PASSWORD: ${{ secrets.TREMANA_CERT_PASSWORD }}
+        run: bash scripts/import-signing-identity.sh
+
       - name: Package and verify exact preview build
         shell: bash
         run: |
