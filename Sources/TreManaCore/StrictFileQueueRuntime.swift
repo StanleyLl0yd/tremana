@@ -12,6 +12,7 @@ public struct StrictQueueRecord: Codable, Sendable, Equatable {
     public let files: [StrictQueueFileSignature]
     public let orderedSelectedIndices: [Int]
     public var activeFileIndex: Int
+    public var pendingPreviousFileIndex: Int?
     public var serverSelectionApplied: Bool
 
     public init(endpoint: String, detail: TransmissionTorrentDetail) throws {
@@ -47,6 +48,7 @@ public struct StrictQueueRecord: Codable, Sendable, Equatable {
         files = entries.map { StrictQueueFileSignature(name: $0.name, length: $0.length) }
         orderedSelectedIndices = selected
         activeFileIndex = active
+        pendingPreviousFileIndex = nil
         serverSelectionApplied = false
     }
 
@@ -85,6 +87,15 @@ public struct StrictQueueRecord: Codable, Sendable, Equatable {
         guard matches(detail), let stats = detail.fileStats else { return false }
         let selected = Set(active.map { [$0] } ?? orderedSelectedIndices)
         return stats.indices.allSatisfy { stats[$0].wanted == selected.contains($0) }
+    }
+
+    public func acceptsObservedWanted(_ detail: TransmissionTorrentDetail) -> Bool {
+        if wantedMatches(detail, active: activeFileIndex) { return true }
+        guard !serverSelectionApplied else { return false }
+        if let previous = pendingPreviousFileIndex {
+            return wantedMatches(detail, active: previous)
+        }
+        return wantedMatches(detail, active: nil)
     }
 
     public var originalUnwantedIndices: [Int] {
