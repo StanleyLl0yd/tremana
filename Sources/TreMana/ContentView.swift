@@ -292,6 +292,7 @@ private struct TorrentTableView: View {
     @State private var pendingRemoveIDs: [Int] = []
     @State private var showingVerifyDialog = false
     @State private var showingRemoveDialog = false
+    @State private var remoteActionRequest: RemoteTorrentActionRequest?
     @SceneStorage("com.sl.tremana.table-columns.v1")
     private var columnCustomization: TableColumnCustomization<TransmissionTorrent>
 
@@ -408,6 +409,24 @@ private struct TorrentTableView: View {
                             } label: {
                                 Label("Copy Magnet Link", systemImage: "link")
                             }
+
+                            Button {
+                                remoteActionRequest = RemoteTorrentActionRequest(
+                                    torrentID: id, kind: .move
+                                )
+                            } label: {
+                                Label("Move Server Data…", systemImage: "folder")
+                            }
+                            .disabled(model.isBusy)
+
+                            Button {
+                                remoteActionRequest = RemoteTorrentActionRequest(
+                                    torrentID: id, kind: .rename
+                                )
+                            } label: {
+                                Label("Rename Server File or Folder…", systemImage: "pencil")
+                            }
+                            .disabled(model.isBusy)
                         }
 
                         Divider()
@@ -477,6 +496,9 @@ private struct TorrentTableView: View {
             .frame(height: 34)
         }
         .navigationTitle("Torrents")
+        .sheet(item: $remoteActionRequest) { request in
+            RemoteTorrentActionSheet(request: request)
+        }
         .confirmationDialog(
             "Verify \(pendingVerifyIDs.count) torrent(s)?",
             isPresented: $showingVerifyDialog,
