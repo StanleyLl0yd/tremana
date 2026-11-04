@@ -451,6 +451,116 @@ struct TransmissionRPCTests {
         #expect(MockURLProtocol.responses.requestCount == 1)
     }
 
+
+    @Test func moveUsesOnlyExplicitTorrentAndServerDestination() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success"}"#)
+        ])
+        let client = try makeClient()
+        try await client.moveTorrent(torrentID: 7, destination: "/mnt/storage/Torrents")
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-set-location")
+        let args = try #require(request["arguments"] as? [String: Any])
+        #expect(args["ids"] as? [Int] == [7])
+        #expect(args["location"] as? String == "/mnt/storage/Torrents")
+        #expect(args["move"] as? Bool == true)
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func renameUsesValidatedExistingPathAndSingleTorrent() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"id":7,"path":"Films/new.mkv","name":"new.mkv"}}"#)
+        ])
+        let client = try makeClient()
+        try await client.renameTorrentPath(torrentID: 7, path: "Films/old.mkv", name: "new.mkv")
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-rename-path")
+        let args = try #require(request["arguments"] as? [String: Any])
+        #expect(args["ids"] as? [Int] == [7])
+        #expect(args["path"] as? String == "Films/old.mkv")
+        #expect(args["name"] as? String == "new.mkv")
+        #expect(MockURLProtocol.responses.requestCount == 1)
+    }
+
+    @Test func invalidRemotePathsNeverContactDaemon() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for destination in ["", "relative", "/", "//host/share", "/a/../b", "/a/./b",
+                            "/a//b", "/a/", "/a\\\\b", "/a\\nb", " /a"] {
+            do {
+                try await client.moveTorrent(torrentID: 7, destination: destination)
+                Issue.record("Accepted invalid destination: \\(destination)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidRemotePath)
+            }
+        }
+        for path in ["", "/absolute", "../escape", "a/../b", "a//b", "a\\\\b"] {
+            do {
+                try await client.renameTorrentPath(torrentID: 7, path: path, name: "valid")
+                Issue.record("Accepted invalid rename path: \\(path)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidRemotePath)
+            }
+        }
+        for name in ["", ".", "..", "a/b", "a\\\\b", " new", "new\\nname"] {
+            do {
+                try await client.renameTorrentPath(torrentID: 7, path: "old", name: name)
+                Issue.record("Accepted invalid rename name: \\(name)")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidRenameName)
+            }
+        }
+        for id in [0, -1] {
+            do {
+                try await client.moveTorrent(torrentID: id, destination: "/valid")
+                Issue.record("Accepted invalid torrent ID")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidTorrentSelection)
+            }
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
+    @Test func invalidRenameResponseIsNotReportedAsConfirmed() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success","arguments":{"id":8,"path":"b","name":"b"}}"#)
+        ])
+        let client = try makeClient()
+        do {
+            try await client.renameTorrentPath(torrentID: 7, path: "a", name: "b")
+            Issue.record("Expected mismatched rename response")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .invalidRenameReply)
+        }
+    }
+
+    @Test func remoteRenameRejectsDaemonFailure() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"permission denied"}"#)
+        ])
+        let client = try makeClient()
+        do {
+            try await client.renameTorrentPath(torrentID: 7, path: "a", name: "b")
+            Issue.record("Expected remote permission error")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .serverError("permission denied"))
+        }
+    }
+
+    @Test func canonicalUnicodeRemotePathsAndDerivedFileNames() throws {
+        #expect(try RemoteTorrentPath.destination("/mnt/Видео/Новые фильмы") ==
+                "/mnt/Видео/Новые фильмы")
+        #expect(try RemoteTorrentPath.relative("Сериал/第01話.mkv") == "Сериал/第01話.mkv")
+        #expect(try RemoteTorrentPath.name("Épisode 1.mkv") == "Épisode 1.mkv")
+
+        let detail = try JSONDecoder().decode(
+            TransmissionTorrentDetail.self,
+            from: Data(#"{"id":1,"name":"Example","status":4,"files":[{"name":"Series/E01.mkv","length":10,"bytesCompleted":0},{"name":"Series/Specials/Extra.mkv","length":10,"bytesCompleted":0}]}"#.utf8)
+        )
+        #expect(RemoteTorrentPath.renameCandidates(files: detail.files ?? []) ==
+                ["Series", "Series/E01.mkv", "Series/Specials", "Series/Specials/Extra.mkv"])
+    }
+
     private func makeClient() throws -> TransmissionRPCClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
