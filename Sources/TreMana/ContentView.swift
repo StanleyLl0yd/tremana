@@ -5,20 +5,23 @@ import UniformTypeIdentifiers
 
 private enum TorrentFilter: Hashable {
     case all
-    case downloading
-    case seeding
+    case active
+    case completed
+    case paused
 }
 
 struct ContentView: View {
     @Environment(TreManaModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.openSettings) private var openSettings
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @State private var filter: TorrentFilter? = .all
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingAddTorrent = false
+    @State private var searchText = ""
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
 
     private var refreshConfiguration: RefreshConfiguration {
@@ -41,8 +44,8 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
                 HStack {
-                    Text("LIBRARY")
-                        .font(.caption2.weight(.semibold))
+                    Text("Downloads")
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                     Button {
@@ -54,35 +57,56 @@ struct ContentView: View {
                     .help("Hide Sidebar")
                     .accessibilityLabel("Hide Sidebar")
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 8)
+
                 if model.isConnected {
                     List(selection: $filter) {
-                        Label("All Torrents", systemImage: "tray.full")
-                            .tag(TorrentFilter.all)
-                        Label("Downloading", systemImage: "arrow.down.circle")
-                            .tag(TorrentFilter.downloading)
-                        Label("Seeding", systemImage: "arrow.up.circle")
-                            .tag(TorrentFilter.seeding)
+                        sidebarItem("All Torrents", icon: "tray.full", filter: .all,
+                                    count: model.torrents.count)
+                        sidebarItem("Active", icon: "arrow.down.circle", filter: .active,
+                                    count: model.torrents.filter { [1, 2, 3, 4, 5, 6].contains($0.status) }.count)
+                        sidebarItem("Completed", icon: "checkmark.circle", filter: .completed,
+                                    count: model.torrents.filter { $0.percentDone >= 1 }.count)
+                        sidebarItem("Paused", icon: "pause.circle", filter: .paused,
+                                    count: model.torrents.filter { $0.status == 0 }.count)
                     }
                     .listStyle(.sidebar)
+                    .scrollContentBackground(.hidden)
                 } else {
                     Spacer()
                 }
+
+                HStack {
+                    Button {
+                        openSettings()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Settings")
+                    Spacer()
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 12)
+
                 if let version = Bundle.main.object(
                     forInfoDictionaryKey: "CFBundleShortVersionString"
                 ) as? String {
                     HStack {
                         Text(version)
                             .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                             .accessibilityLabel("TreMana version \(version)")
                         Spacer()
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 16)
                     .padding(.bottom, 10)
                 }
             }
+            .background(.ultraThinMaterial)
             .navigationTitle("TreMana")
             .toolbar(removing: .sidebarToggle)
         } detail: {
@@ -92,10 +116,11 @@ struct ContentView: View {
                         showSidebar: columnVisibility == .detailOnly,
                         revealSidebar: { columnVisibility = .all },
                         add: { showingAddTorrent = true },
-                        presentation: $toolbarPresentation
+                        presentation: $toolbarPresentation,
+                        searchText: $searchText
                     )
                     Divider()
-                    TorrentTableView(filter: filter ?? .all)
+                    TorrentTableView(filter: filter ?? .all, searchText: searchText)
                 } else {
                     if columnVisibility == .detailOnly {
                         HStack {
@@ -112,6 +137,18 @@ struct ContentView: View {
                     ConnectionView()
                 }
             }
+        }
+        .background {
+            LinearGradient(
+                colors: [
+                    Color.pink.opacity(0.085),
+                    Color.purple.opacity(0.055),
+                    Color.blue.opacity(0.035)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
         }
         .task(id: refreshLoopIdentity) {
             // SwiftUI cancels the task when connection, phase or settings change.
@@ -170,6 +207,21 @@ struct ContentView: View {
         .onChange(of: filter) { _, _ in
             model.selectedTorrentIDs.removeAll()
         }
+    }
+
+    private func sidebarItem(
+        _ title: String, icon: String, filter: TorrentFilter, count: Int
+    ) -> some View {
+        HStack(spacing: 8) {
+            Label(LocalizedStringKey(title), systemImage: icon)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(count, format: .number)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .tag(filter)
+        .padding(.vertical, 3)
     }
 }
 
