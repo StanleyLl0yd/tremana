@@ -7,6 +7,8 @@ public protocol TransmissionRPCProviding: Sendable {
     func torrentSwarm() async throws -> [Int: TorrentSwarmCounts]
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws
+    func moveTorrent(torrentID: Int, destination: String) async throws
+    func renameTorrentPath(torrentID: Int, path: String, name: String) async throws
     func perform(_ action: TorrentAction, ids: [Int]) async throws
     func removeTorrents(ids: [Int], deleteLocalData: Bool) async throws
     func magnetLink(id: Int) async throws -> String?
@@ -16,6 +18,14 @@ public protocol TransmissionRPCProviding: Sendable {
 extension TransmissionRPCProviding {
     public func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws {
         throw TransmissionRPCError.invalidFileSelection
+    }
+
+    public func moveTorrent(torrentID: Int, destination: String) async throws {
+        throw TransmissionRPCError.invalidRemotePath
+    }
+
+    public func renameTorrentPath(torrentID: Int, path: String, name: String) async throws {
+        throw TransmissionRPCError.invalidRenameName
     }
 
     public func torrentSwarm() async throws -> [Int: TorrentSwarmCounts] { [:] }
@@ -558,6 +568,165 @@ public final class TreManaModel {
         } catch {
             guard connectionGeneration == ticket else { return }
             errorMessage = error.localizedDescription
+        }
+    }
+
+
+    /// A fresh, explicit per-torrent snapshot for the remote-path confirmation UI.
+    public func remoteActionDetail(for torrentID: Int) async -> TransmissionTorrentDetail? {
+        guard let client, !isBusy, torrentID > 0,
+              torrents.contains(where: { $0.id == torrentID }) else {
+            errorMessage = TransmissionRPCError.invalidTorrentSelection.localizedDescription
+            return nil
+        }
+        let ticket = connectionGeneration
+        do {
+            let detail = try await client.torrentDetails(id: torrentID)
+            guard connectionGeneration == ticket else { return nil }
+            guard let detail, detail.id == torrentID,
+                  let hash = detail.hashString, !hash.isEmpty else {
+                throw TransmissionRPCError.remoteStateChanged
+            }
+            errorMessage = nil
+            return detail
+        } catch {
+            guard connectionGeneration == ticket else { return nil }
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    public func moveTorrent(
+        to destination: String,
+        expected: TransmissionTorrentDetail
+    ) async -> Bool {
+        guard let client, !isBusy, expected.id > 0,
+              torrents.contains(where: { $0.id == expected.id }) else {
+            errorMessage = TransmissionRPCError.invalidTorrentSelection.localizedDescription
+            return false
+        }
+
+        let ticket = connectionGeneration
+        isBusy = true
+        mutationGeneration &+= 1
+        defer {
+            if connectionGeneration == ticket { isBusy = false }
+        }
+
+        do {
+            let location = try RemoteTorrentPath.destination(destination)
+            let previous = try RemoteTorrentPath.destination(expected.downloadDir ?? "")
+            guard location != previous else {
+                throw TransmissionRPCError.invalidRemotePath
+            }
+            _ = try await confirmedRemoteSnapshot(expected: expected, client: client)
+            guard connectionGeneration == ticket else { return false }
+            try await client.moveTorrent(torrentID: expected.id, destination: location)
+            guard connectionGeneration == ticket else { return false }
+            let verified = try await client.torrentDetails(id: expected.id)
+            guard connectionGeneration == ticket else { return false }
+            guard verified?.hashString == expected.hashString,
+                  verified?.downloadDir == location else {
+                throw TransmissionRPCError.remoteStateChanged
+            }
+            noticeMessage = "Server move confirmed"
+            errorMessage = nil
+            await refreshAfterRemoteAction(client: client, ticket: ticket)
+            return connectionGeneration == ticket
+        } catch {
+            guard connectionGeneration == ticket else { return false }
+            errorMessage = error.localizedDescription
+            noticeMessage = nil
+            return false
+        }
+    }
+
+    public func renameTorrentPath(
+        _ path: String,
+        to name: String,
+        expected: TransmissionTorrentDetail
+    ) async -> Bool {
+        guard let client, !isBusy, expected.id > 0,
+              torrents.contains(where: { $0.id == expected.id }) else {
+            errorMessage = TransmissionRPCError.invalidTorrentSelection.localizedDescription
+            return false
+        }
+
+        let ticket = connectionGeneration
+        isBusy = true
+        mutationGeneration &+= 1
+        defer {
+            if connectionGeneration == ticket { isBusy = false }
+        }
+
+        do {
+            let oldPath = try RemoteTorrentPath.relative(path)
+            let newName = try RemoteTorrentPath.name(name)
+            let parts = oldPath.split(separator: "/")
+            let updatedPath = (parts.dropLast().map(String.init) + [newName])
+                .joined(separator: "/")
+            let snapshotPaths = RemoteTorrentPath.renameCandidates(files: expected.files ?? [])
+            guard snapshotPaths.contains(oldPath), oldPath != updatedPath,
+                  !snapshotPaths.contains(updatedPath) else {
+                throw TransmissionRPCError.remoteStateChanged
+            }
+            let latest = try await confirmedRemoteSnapshot(expected: expected, client: client)
+            guard connectionGeneration == ticket else { return false }
+            guard latest.files?.map(\.name) == expected.files?.map(\.name) else {
+                throw TransmissionRPCError.remoteStateChanged
+            }
+
+            try await client.renameTorrentPath(
+                torrentID: expected.id, path: oldPath, name: newName
+            )
+            guard connectionGeneration == ticket else { return false }
+            let verified = try await client.torrentDetails(id: expected.id)
+            guard connectionGeneration == ticket else { return false }
+            let paths = RemoteTorrentPath.renameCandidates(files: verified?.files ?? [])
+            guard verified?.hashString == expected.hashString,
+                  paths.contains(updatedPath), !paths.contains(oldPath) else {
+                throw TransmissionRPCError.remoteStateChanged
+            }
+            noticeMessage = "Server path rename confirmed"
+            errorMessage = nil
+            await refreshAfterRemoteAction(client: client, ticket: ticket)
+            return connectionGeneration == ticket
+        } catch {
+            guard connectionGeneration == ticket else { return false }
+            errorMessage = error.localizedDescription
+            noticeMessage = nil
+            return false
+        }
+    }
+
+    private func confirmedRemoteSnapshot(
+        expected: TransmissionTorrentDetail,
+        client: any TransmissionRPCProviding
+    ) async throws -> TransmissionTorrentDetail {
+        guard expected.id > 0,
+              let hash = expected.hashString, !hash.isEmpty,
+              let current = try await client.torrentDetails(id: expected.id),
+              current.id == expected.id,
+              current.hashString == hash,
+              current.downloadDir == expected.downloadDir else {
+            throw TransmissionRPCError.remoteStateChanged
+        }
+        return current
+    }
+
+    private func refreshAfterRemoteAction(
+        client: any TransmissionRPCProviding, ticket: UInt64
+    ) async {
+        // A successful RPC has already happened; a failed refresh must never
+        // turn the completed remote mutation into an apparent failed command.
+        do {
+            let loaded = try await client.torrents()
+            guard connectionGeneration == ticket else { return }
+            torrents = loaded
+            selectedTorrentIDs.formIntersection(Set(loaded.map(\.id)))
+            await loadSelectedTorrentDetails()
+        } catch {
+            // Automatic polling can retry the non-destructive display refresh.
         }
     }
 
