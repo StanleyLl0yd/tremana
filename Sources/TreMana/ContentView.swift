@@ -5,20 +5,23 @@ import UniformTypeIdentifiers
 
 private enum TorrentFilter: Hashable {
     case all
-    case downloading
-    case seeding
+    case active
+    case completed
+    case paused
 }
 
 struct ContentView: View {
     @Environment(TreManaModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.openSettings) private var openSettings
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @State private var filter: TorrentFilter? = .all
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingAddTorrent = false
+    @State private var searchText = ""
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
 
     private var refreshConfiguration: RefreshConfiguration {
@@ -41,8 +44,8 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
                 HStack {
-                    Text("LIBRARY")
-                        .font(.caption2.weight(.semibold))
+                    Text("Downloads")
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                     Button {
@@ -54,35 +57,56 @@ struct ContentView: View {
                     .help("Hide Sidebar")
                     .accessibilityLabel("Hide Sidebar")
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 8)
+
                 if model.isConnected {
                     List(selection: $filter) {
-                        Label("All Torrents", systemImage: "tray.full")
-                            .tag(TorrentFilter.all)
-                        Label("Downloading", systemImage: "arrow.down.circle")
-                            .tag(TorrentFilter.downloading)
-                        Label("Seeding", systemImage: "arrow.up.circle")
-                            .tag(TorrentFilter.seeding)
+                        sidebarItem("All Torrents", icon: "tray.full", filter: .all,
+                                    count: model.torrents.count)
+                        sidebarItem("Active", icon: "arrow.down.circle", filter: .active,
+                                    count: model.torrents.filter { [1, 2, 3, 4, 5, 6].contains($0.status) }.count)
+                        sidebarItem("Completed", icon: "checkmark.circle", filter: .completed,
+                                    count: model.torrents.filter { $0.percentDone >= 1 }.count)
+                        sidebarItem("Paused", icon: "pause.circle", filter: .paused,
+                                    count: model.torrents.filter { $0.status == 0 }.count)
                     }
                     .listStyle(.sidebar)
+                    .scrollContentBackground(.hidden)
                 } else {
                     Spacer()
                 }
+
+                HStack {
+                    Button {
+                        openSettings()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Settings")
+                    Spacer()
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 12)
+
                 if let version = Bundle.main.object(
                     forInfoDictionaryKey: "CFBundleShortVersionString"
                 ) as? String {
                     HStack {
                         Text(version)
                             .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                             .accessibilityLabel("TreMana version \(version)")
                         Spacer()
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 16)
                     .padding(.bottom, 10)
                 }
             }
+            .background(.ultraThinMaterial)
             .navigationTitle("TreMana")
             .toolbar(removing: .sidebarToggle)
         } detail: {
@@ -92,10 +116,11 @@ struct ContentView: View {
                         showSidebar: columnVisibility == .detailOnly,
                         revealSidebar: { columnVisibility = .all },
                         add: { showingAddTorrent = true },
-                        presentation: $toolbarPresentation
+                        presentation: $toolbarPresentation,
+                        searchText: $searchText
                     )
                     Divider()
-                    TorrentTableView(filter: filter ?? .all)
+                    TorrentTableView(filter: filter ?? .all, searchText: searchText)
                 } else {
                     if columnVisibility == .detailOnly {
                         HStack {
@@ -112,6 +137,18 @@ struct ContentView: View {
                     ConnectionView()
                 }
             }
+        }
+        .background {
+            LinearGradient(
+                colors: [
+                    Color.pink.opacity(0.085),
+                    Color.purple.opacity(0.055),
+                    Color.blue.opacity(0.035)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
         }
         .task(id: refreshLoopIdentity) {
             // SwiftUI cancels the task when connection, phase or settings change.
@@ -171,6 +208,21 @@ struct ContentView: View {
             model.selectedTorrentIDs.removeAll()
         }
     }
+
+    private func sidebarItem(
+        _ title: String, icon: String, filter: TorrentFilter, count: Int
+    ) -> some View {
+        HStack(spacing: 8) {
+            Label(LocalizedStringKey(title), systemImage: icon)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(count, format: .number)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .tag(filter)
+        .padding(.vertical, 3)
+    }
 }
 
 enum ToolbarPresentation: String, CaseIterable, Identifiable {
@@ -197,13 +249,23 @@ private struct TorrentCommandBar: View {
     let revealSidebar: () -> Void
     let add: () -> Void
     @Binding var presentation: String
+    @Binding var searchText: String
 
     private var selectedPresentation: ToolbarPresentation {
         ToolbarPresentation(rawValue: presentation) ?? .iconsAndLabels
     }
 
+    private var connectionName: String {
+        if let profile = model.savedProfiles.first(where: {
+            $0.id == model.selectedProfileID
+        }) {
+            return profile.name
+        }
+        return URL(string: model.rpcURL)?.host ?? "Transmission"
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             if showSidebar {
                 ToolbarActionButton(
                     title: "Show Sidebar", symbol: "sidebar.left",
@@ -211,12 +273,35 @@ private struct TorrentCommandBar: View {
                 )
             }
 
-            ToolbarActionButton(
-                title: "Disconnect", symbol: "network.slash",
-                presentation: selectedPresentation
-            ) {
-                model.disconnect()
+            Menu {
+                Button {
+                    model.disconnect()
+                } label: {
+                    Label("Disconnect", systemImage: "network.slash")
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 7, height: 7)
+                    Text(connectionName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+                .padding(.horizontal, 9)
+                .frame(height: 28)
+                .background(.ultraThinMaterial, in: Capsule())
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: 185)
+            .help("Connection")
+            .accessibilityLabel("Connection")
+
             Divider().frame(height: 18)
 
             ToolbarActionButton(
@@ -242,39 +327,20 @@ private struct TorrentCommandBar: View {
             }
             .disabled(model.isBusy || model.selectedTorrentIDs.isEmpty)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 6)
 
-            Menu {
-                Picker("Toolbar appearance", selection: $presentation) {
-                    ForEach(ToolbarPresentation.allCases) { option in
-                        Text(LocalizedStringKey(option.title))
-                            .tag(option.rawValue)
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    if selectedPresentation != .labels {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    if selectedPresentation != .icons {
-                        Text("Toolbar")
-                            .lineLimit(1)
-                    }
-                }
-                .frame(minHeight: 28)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Toolbar appearance")
-            .accessibilityLabel("Toolbar appearance")
+            TextField("Search torrents", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 112, idealWidth: 165, maxWidth: 190)
+                .accessibilityLabel("Search torrents")
         }
         .font(.subheadline)
         .padding(.horizontal, 15)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17))
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
         .accessibilityElement(children: .contain)
     }
 }
@@ -409,8 +475,8 @@ private struct ConnectionView: View {
 private struct TorrentTableView: View {
     @Environment(TreManaModel.self) private var model
     let filter: TorrentFilter
-    @State private var inspectorExpanded = false
-    @State private var inspectorTab: InspectorTab = .overview
+    let searchText: String
+    @State private var inspectorTab: InspectorTab = .files
     @State private var pendingVerifyIDs: [Int] = []
     @State private var pendingRemoveIDs: [Int] = []
     @State private var showingVerifyDialog = false
@@ -420,15 +486,24 @@ private struct TorrentTableView: View {
     @State private var queueRequestEnabled = false
     @State private var showingQueueConfirmation = false
     @State private var showingPiecesLimitation = false
-    @SceneStorage("com.sl.tremana.table-columns.v1")
+    @SceneStorage("com.sl.tremana.table-columns.v2")
     private var columnCustomization: TableColumnCustomization<TransmissionTorrent>
 
     private var filteredTorrents: [TransmissionTorrent] {
+        let filtered: [TransmissionTorrent]
         switch filter {
-        case .all: model.torrents
-        case .downloading: model.torrents.filter { $0.status == 4 }
-        case .seeding: model.torrents.filter { $0.status == 6 }
+        case .all:
+            filtered = model.torrents
+        case .active:
+            filtered = model.torrents.filter { [1, 2, 3, 4, 5, 6].contains($0.status) }
+        case .completed:
+            filtered = model.torrents.filter { $0.percentDone >= 1 }
+        case .paused:
+            filtered = model.torrents.filter { $0.status == 0 }
         }
+        let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return filtered }
+        return filtered.filter { $0.name.localizedStandardContains(term) }
     }
 
     private var activeCount: Int {
@@ -451,12 +526,8 @@ private struct TorrentTableView: View {
         @Bindable var observedModel = model
 
         VStack(spacing: 0) {
-            if inspectorExpanded {
-                TorrentInspectorView(isExpanded: $inspectorExpanded, selectedTab: $inspectorTab)
-                    .frame(maxHeight: .infinity)
-            } else {
-                VSplitView {
-                    Table(
+            VSplitView {
+                Table(
                         filteredTorrents,
                         selection: $observedModel.selectedTorrentIDs,
                         columnCustomization: $columnCustomization
@@ -577,15 +648,21 @@ private struct TorrentTableView: View {
                         }
                         .disabled(selection.isEmpty || model.isBusy)
                     }
-                    .accessibilityLabel("Transmission torrents")
-                    .alternatingRowBackgrounds(.disabled)
-                    .frame(minHeight: 85)
-                    TorrentInspectorView(isExpanded: $inspectorExpanded, selectedTab: $inspectorTab)
-                        .frame(minHeight: 120, idealHeight: 315)
-                }
-            }
+                .accessibilityLabel("Transmission torrents")
+                .alternatingRowBackgrounds(.disabled)
+                .frame(minHeight: 180, idealHeight: 320)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
 
-            Divider()
+                TorrentInspectorView(selectedTab: $inspectorTab)
+                    .frame(minHeight: 190, idealHeight: 300)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 9)
+
+            Divider().opacity(0.35)
 
             HStack(spacing: 9) {
                 if let footerMessage {
@@ -615,15 +692,33 @@ private struct TorrentTableView: View {
                 }
                 Spacer(minLength: 6)
                 if let server = model.server {
-                    Text("Transmission \(server.version) · RPC \(server.rpcVersion)")
+                    Text("Transmission \(server.version)")
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
                     Divider().frame(height: 15)
-                    Label("\(activeCount)", systemImage: "arrow.down.circle")
-                        .help("Active transfers")
-                    Label("\(seedingCount)", systemImage: "arrow.up.circle")
-                        .help("Seeding torrents")
+                    Label(
+                        ByteCountFormatter.string(
+                            fromByteCount: model.torrents.reduce(Int64(0)) {
+                                $0 &+ max(Int64(0), $1.rateDownload)
+                            },
+                            countStyle: .binary
+                        ) + "/s",
+                        systemImage: "arrow.down"
+                    )
+                    .foregroundStyle(.secondary)
+                    Label(
+                        ByteCountFormatter.string(
+                            fromByteCount: model.torrents.reduce(Int64(0)) {
+                                $0 &+ max(Int64(0), $1.rateUpload)
+                            },
+                            countStyle: .binary
+                        ) + "/s",
+                        systemImage: "arrow.up"
+                    )
+                    .foregroundStyle(.secondary)
                     Divider().frame(height: 15)
+                    Label("\(activeCount)", systemImage: "square.stack")
+                        .help("Active transfers")
                 }
                 if let last = model.lastRefreshAt {
                     Text(last, format: .dateTime.hour().minute().second())
