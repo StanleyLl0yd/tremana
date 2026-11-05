@@ -531,6 +531,85 @@ private struct FileWantedCell: View {
     }
 }
 
+private struct FilePriorityCell: View {
+    @Environment(TreManaModel.self) private var model
+    let torrentID: Int
+    let row: FileTableEntry
+
+    private var priority: Int {
+        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
+              let stats = detail.fileStats, stats.indices.contains(row.id) else {
+            return row.stat?.priority ?? 0
+        }
+        return stats[row.id].priority
+    }
+
+    var body: some View {
+        Group {
+            if row.stat != nil {
+                Picker("Priority", selection: Binding(
+                    get: { priority },
+                    set: { value in
+                        let previous = priority
+                        Task {
+                            await model.setFilePriority(
+                                torrentID: torrentID, fileIndex: row.id,
+                                priority: value, expectedPriority: previous
+                            )
+                        }
+                    }
+                )) {
+                    Text("Low").tag(-1)
+                    Text("Normal").tag(0)
+                    Text("High").tag(1)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .disabled(model.isBusy)
+                .accessibilityIdentifier("file.priority.\(row.id)")
+            } else {
+                Text("—").foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct FileBatchMenu: View {
+    @Environment(TreManaModel.self) private var model
+    let torrentID: Int
+    let indices: [Int]
+    let wantedCount: Int
+    let selectedWantedCount: Int
+    let queueLocked: Bool
+
+    var body: some View {
+        Menu {
+            Button("Download selected") { apply(.download(true)) }
+                .disabled(queueLocked)
+            Button("Skip selected") { apply(.download(false)) }
+                .disabled(queueLocked || selectedWantedCount >= wantedCount)
+            Divider()
+            Button("Low priority") { apply(.priority(-1)) }
+            Button("Normal priority") { apply(.priority(0)) }
+            Button("High priority") { apply(.priority(1)) }
+        } label: {
+            Label("Selected file actions", systemImage: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(model.isBusy)
+        .accessibilityIdentifier("files.bulk-actions")
+    }
+
+    private func apply(_ action: FileBatchAction) {
+        Task {
+            await model.applyFileBatch(
+                torrentID: torrentID, indices: indices, action: action
+            )
+        }
+    }
+}
+
 private struct InspectorPeerRow: Identifiable {
     let id: Int
     let address: String
