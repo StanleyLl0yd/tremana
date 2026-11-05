@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var showingAddTorrent = false
     @State private var searchText = ""
+    @State private var connectionContentHeight: CGFloat = 500
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
 
     private var refreshConfiguration: RefreshConfiguration {
@@ -113,8 +114,16 @@ struct ContentView: View {
         }
         .background { TreManaWindowTint() }
         .background {
-            TreManaWindowSizing(isConnected: model.isConnected)
+            TreManaWindowSizing(
+                isConnected: model.isConnected,
+                disconnectedContentHeight: connectionContentHeight
+            )
                 .frame(width: 0, height: 0)
+        }
+        .onPreferenceChange(MeasuredContentHeight.self) { height in
+            if height > 0 && abs(height - connectionContentHeight) > 1 {
+                connectionContentHeight = height
+            }
         }
         .task(id: refreshLoopIdentity) {
             // SwiftUI cancels the task when connection, phase or settings change.
@@ -231,7 +240,7 @@ private struct TorrentCommandBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             if showSidebar {
                 Button(action: revealSidebar) {
                     Image(systemName: "sidebar.left")
@@ -255,10 +264,11 @@ private struct TorrentCommandBar: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(maxWidth: 150, alignment: .leading)
                 .help(connectionName)
 
-            Divider().frame(height: 18)
+            Rectangle()
+                .fill(.secondary.opacity(0.4))
+                .frame(width: 1, height: 18)
 
             ToolbarActionButton(
                 title: "Add Torrent", symbol: "plus",
@@ -335,9 +345,9 @@ private struct ConnectionView: View {
     var body: some View {
         @Bindable var form = model
 
-        Form {
-            Section {
-                HStack(alignment: .center, spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 14) {
                     ConnectionHero()
                     Button {
                         Task { await model.connect() }
@@ -355,74 +365,130 @@ private struct ConnectionView: View {
                         model.isConnected || model.isBusy || model.profilesBusy
                             || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
+                    .fixedSize()
                     .help("Connect")
                     .accessibilityIdentifier("connection.primary-connect")
                 }
-                .padding(11)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-            }
-            Section("Saved Profiles") {
-                Picker("Profile", selection: $form.selectedProfileID) {
-                    Text("Custom connection").tag(nil as UUID?)
-                    ForEach(model.savedProfiles) { profile in
-                        Text(profile.name).tag(Optional(profile.id))
+
+                CompactFormSection("Saved Profiles") {
+                    CompactFormRow("Profile") {
+                        Picker("Profile", selection: $form.selectedProfileID) {
+                            Text("Custom connection").tag(nil as UUID?)
+                            ForEach(model.savedProfiles) { profile in
+                                Text(profile.name).tag(Optional(profile.id))
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .onChange(of: model.selectedProfileID) { _, id in
+                            Task { await model.chooseProfile(id) }
+                        }
+                        .disabled(model.isBusy || model.profilesBusy)
                     }
-                }
-                .onChange(of: model.selectedProfileID) { _, id in
-                    Task { await model.chooseProfile(id) }
-                }
-                .disabled(model.isBusy || model.profilesBusy)
+                    Divider().padding(.leading, 13)
+                    CompactFormRow("Profile name (optional)") {
+                        TextField("Profile name (optional)", text: $form.profileName)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 260)
+                    }
+                    Divider().padding(.leading, 13)
+                    CompactFormRow("Remember this connection") {
+                        Toggle("Remember this connection", isOn: $form.rememberPassword)
+                            .labelsHidden()
+                            .help("After a successful connection, TreMana saves this profile. Passwords are kept in macOS Keychain, never in app settings.")
+                    }
 
-                TextField("Profile name (optional)", text: $form.profileName)
-                Toggle("Remember this connection", isOn: $form.rememberPassword)
-
-                if model.rememberPassword {
-                    Text("After a successful connection, TreMana saves this profile. Passwords are kept in macOS Keychain, never in app settings.")
+                    if model.hasMatchingSavedProfile && model.rememberPassword
+                        && model.password.isEmpty {
+                        Divider().padding(.leading, 13)
+                        Label(
+                            LocalizedStringKey(model.canReuseSavedPassword
+                                ? "Password saved securely. Leave the field empty to reuse it."
+                                : "Leave the password blank to reuse a saved password, if available."),
+                            systemImage: model.canReuseSavedPassword
+                                ? "checkmark.shield" : "key.horizontal"
+                        )
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-                if model.hasMatchingSavedProfile && model.rememberPassword
-                    && model.password.isEmpty {
-                    Label(
-                        LocalizedStringKey(model.canReuseSavedPassword
-                            ? "Password saved securely. Leave the field empty to reuse it."
-                            : "Leave the password blank to reuse a saved password, if available."),
-                        systemImage: model.canReuseSavedPassword ? "checkmark.shield" : "key.horizontal"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-
-                if model.selectedProfileID != nil {
-                    Button("Forget Selected Connection") {
-                        Task { await model.deleteSelectedProfile() }
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 7)
                     }
-                    .disabled(model.profilesBusy || model.isBusy)
-                }
-                if let profileError = model.profileErrorMessage {
-                    Text(profileError)
-                        .foregroundStyle(.red)
-                }
-            }
 
-            Section("Transmission RPC") {
-                TextField("Server URL", text: $form.rpcURL)
-                    .textContentType(.URL)
-                    .autocorrectionDisabled()
-                TextField("Username", text: $form.username)
-                SecureField("Password", text: $form.password)
-                Toggle("Allow unencrypted HTTP (trusted local network only)",
-                       isOn: $form.allowsInsecureHTTP)
+                    if model.selectedProfileID != nil {
+                        Divider().padding(.leading, 13)
+                        HStack {
+                            Button("Forget Selected Connection") {
+                                Task { await model.deleteSelectedProfile() }
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(model.profilesBusy || model.isBusy)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 8)
+                    }
+                    if let profileError = model.profileErrorMessage {
+                        Divider().padding(.leading, 13)
+                        Text(profileError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 7)
+                    }
+                }
+
+                CompactFormSection("Transmission RPC") {
+                    CompactFormRow("Server URL") {
+                        TextField("Server URL", text: $form.rpcURL)
+                            .textContentType(.URL)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 335)
+                    }
+                    Divider().padding(.leading, 13)
+                    CompactFormRow("Username") {
+                        TextField("Username", text: $form.username)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 280)
+                    }
+                    Divider().padding(.leading, 13)
+                    CompactFormRow("Password") {
+                        SecureField("Password", text: $form.password)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 280)
+                    }
+                    Divider().padding(.leading, 13)
+                    CompactFormRow("Allow unencrypted HTTP (trusted local network only)") {
+                        Toggle(
+                            "Allow unencrypted HTTP (trusted local network only)",
+                            isOn: $form.allowsInsecureHTTP
+                        )
+                        .labelsHidden()
+                    }
+                }
+
+                if let message = model.errorMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("Connection error: \(message)")
+                        .padding(.horizontal, 4)
+                }
             }
-            if let message = model.errorMessage {
-                Text(message)
-                    .foregroundStyle(.red)
-                    .accessibilityLabel("Connection error: \(message)")
-            }
+            .frame(maxWidth: 704)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
+            .reportNaturalHeight()
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        .scrollIndicators(.automatic)
         .background { TreManaWindowTint() }
         .navigationTitle("Connection")
         .task { await model.reloadProfiles() }
