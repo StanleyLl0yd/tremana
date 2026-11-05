@@ -208,7 +208,9 @@ struct TorrentInspectorView: View {
                     .monospacedDigit()
                 Text("Files selected")
                 if !selection.isEmpty {
-                    Text("· \(selection.count) selected")
+                    Text("·")
+                    Text("Selected")
+                    Text(selection.count, format: .number).monospacedDigit()
                 }
                 Spacer(minLength: 0)
                 if selection.count > 1, hasStats {
