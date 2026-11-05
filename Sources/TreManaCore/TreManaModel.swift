@@ -651,12 +651,12 @@ public final class TreManaModel {
                   let files = current.files, let stats = current.fileStats,
                   files.count == displayedFiles.count,
                   stats.count == displayedStats.count,
-                  zip(files, displayedFiles).allSatisfy { pair in
+                  zip(files, displayedFiles).allSatisfy({ pair in
                       pair.0.name == pair.1.name && pair.0.length == pair.1.length
-                  },
-                  zip(stats, displayedStats).allSatisfy { pair in
+                  }),
+                  zip(stats, displayedStats).allSatisfy({ pair in
                       pair.0.wanted == pair.1.wanted && pair.0.priority == pair.1.priority
-                  } else {
+                  }) else {
                 selectedTorrentDetail = current
                 throw TransmissionRPCError.fileSelectionChanged
             }
@@ -694,9 +694,9 @@ public final class TreManaModel {
                   let postStats = verified.fileStats,
                   postFiles.count == displayedFiles.count,
                   postStats.count == displayedStats.count,
-                  zip(postFiles, displayedFiles).allSatisfy { pair in
+                  zip(postFiles, displayedFiles).allSatisfy({ pair in
                       pair.0.name == pair.1.name && pair.0.length == pair.1.length
-                  } else {
+                  }) else {
                 throw TransmissionRPCError.fileSelectionChanged
             }
             selectedTorrentDetail = verified
