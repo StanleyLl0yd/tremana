@@ -14,6 +14,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
 struct TorrentInspectorView: View {
     @Environment(TreManaModel.self) private var model
     @Binding var selectedTab: InspectorTab
+    @State private var selectedFileIndices: Set<Int> = []
     @State private var peerSortOrder: [KeyPathComparator<InspectorPeerRow>] = [
         KeyPathComparator(\.downRate, order: .reverse)
     ]
@@ -100,6 +101,7 @@ struct TorrentInspectorView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: selectedID) { _, _ in selectedFileIndices.removeAll() }
         .task(id: selectedID) {
             await model.loadSelectedTorrentDetails()
             guard let id = selectedID else { return }
@@ -194,67 +196,83 @@ struct TorrentInspectorView: View {
         let stats = detail.fileStats
         let hasStats = stats?.count == entries.count
         let wantedCount = stats?.filter(\.wanted).count ?? 0
-        let isQueueLocked = model.strictQueueTorrentIDs.contains(detail.id)
+        let queueLocked = model.strictQueueTorrentIDs.contains(detail.id)
+        let rows = entries.indices.map { FileTableEntry(
+            id: $0, file: entries[$0], stat: hasStats ? stats?[$0] : nil
+        ) }
+        let selection = selectedFileIndices.filter { entries.indices.contains($0) }.sorted()
 
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                if hasStats {
-                    Text("\(wantedCount) / \(entries.count)")
-                        .monospacedDigit()
-                    Text("Files selected")
-                } else {
-                    Text("File selection unavailable")
+                Text("\(wantedCount) / \(entries.count)")
+                    .monospacedDigit()
+                Text("Files selected")
+                if !selection.isEmpty {
+                    Text("· \(selection.count) selected")
                 }
                 Spacer(minLength: 0)
+                if selection.count > 1, hasStats {
+                    FileBatchMenu(
+                        torrentID: detail.id,
+                        indices: selection,
+                        wantedCount: wantedCount,
+                        selectedWantedCount: selection.filter { stats?[$0].wanted == true }.count,
+                        queueLocked: queueLocked
+                    )
+                }
                 if model.strictQueuePendingIDs.contains(detail.id) {
                     Label("Ordered download pending", systemImage: "clock")
-                } else if isQueueLocked {
+                } else if queueLocked {
                     Label("Ordered download active", systemImage: "list.number")
                 }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 15)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7)
 
-            if entries.isEmpty {
+            if rows.isEmpty {
                 placeholder("No file metadata available", symbol: "doc")
             } else {
-                ScrollView([.vertical, .horizontal]) {
-                    LazyVStack(spacing: 0) {
-                        HStack(spacing: 12) {
-                            Text("Name")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text("Size")
-                                .frame(width: 78, alignment: .trailing)
-                            Text("Progress")
-                                .frame(width: 140, alignment: .center)
-                            Text("Download file")
-                                .frame(width: 72)
-                            Text("Priority")
-                                .frame(width: 115)
-                        }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .frame(height: 30)
-                        .padding(.horizontal, 12)
-                        .background(.ultraThinMaterial)
+                Table(rows, selection: $selectedFileIndices) {
+                    TableColumn("Name") { row in
+                        Label(row.file.name, systemImage: "doc")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(row.file.name)
+                    }
+                    .width(min: 190, ideal: 400)
 
-                        ForEach(entries.indices, id: \.self) { index in
-                            ZenFileRow(
-                                torrentID: detail.id,
-                                fileIndex: index,
-                                file: entries[index],
-                                stat: hasStats ? stats?[index] : nil,
-                                wantedCount: wantedCount,
-                                queueLocked: isQueueLocked
-                            )
+                    TableColumn("Size") { row in
+                        Text(size(row.file.length))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .width(min: 74, ideal: 94)
+
+                    TableColumn("Progress") { row in
+                        HStack(spacing: 7) {
+                            ProgressView(value: row.progress)
+                            Text(row.progress, format: .percent.precision(.fractionLength(1)))
+                                .font(.caption.monospacedDigit())
+                                .frame(width: 48, alignment: .trailing)
                         }
                     }
-                    .frame(minWidth: 720)
+                    .width(min: 100, ideal: 155)
+
+                    TableColumn("Download file") { row in
+                        FileWantedCell(torrentID: detail.id, row: row,
+                                       wantedCount: wantedCount, queueLocked: queueLocked)
+                    }
+                    .width(min: 72, ideal: 90)
+
+                    TableColumn("Priority") { row in
+                        FilePriorityCell(torrentID: detail.id, row: row)
+                    }
+                    .width(min: 100, ideal: 130)
                 }
-                .scrollIndicators(.automatic)
-                .accessibilityLabel("Files to download")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("files.table")
             }
         }
     }
