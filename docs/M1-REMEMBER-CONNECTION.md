@@ -43,3 +43,12 @@ PASS; Disconnect PASS; connection profile/password persistence FAIL.
 - If an error occurs, copy only the message and OSStatus code, not credentials.
 
 No claims of live Keychain acceptance until user reports these results.
+
+## 0.4.3: delayed credential lookup
+
+Saved profile listing, default selection and profile switching now avoid any
+Keychain secret lookup. Only an explicit Connect action for the exact matching
+RPC endpoint resolves a saved password. The UI shows a neutral hint until the
+secret has been verified. Legacy Keychain permissions may require a one-time
+authorization after software updates; a recurrent prompt is a failure to
+investigate, not a reason to disable security checks.

@@ -130,14 +130,20 @@ public final class TreManaModel {
 
     public var isConnected: Bool { server != nil && client != nil }
 
-    public var canReuseSavedPassword: Bool {
-        guard savedPasswordAvailable,
-              let saved = savedProfiles.first(where: { $0.id == selectedProfileID }) else {
+    // A profile can be matched using nonsecret metadata without opening Keychain.
+    public var hasMatchingSavedProfile: Bool {
+        guard let saved = savedProfiles.first(where: { $0.id == selectedProfileID }) else {
             return false
         }
         return saved.rpcURL == rpcURL
             && saved.username == username
             && saved.allowsInsecureHTTP == allowsInsecureHTTP
+            && !username.isEmpty
+    }
+
+    // A saved credential is confirmed only by an explicit Keychain read/write.
+    public var canReuseSavedPassword: Bool {
+        savedPasswordAvailable && hasMatchingSavedProfile
     }
 
     public init(
@@ -196,17 +202,11 @@ public final class TreManaModel {
         rpcURL = profile.rpcURL
         username = profile.username
         allowsInsecureHTTP = profile.allowsInsecureHTTP
-        do {
-            let stored = try await profileStore.password(for: id)
-            guard profileSelectionGeneration == generation else { return }
-            // Never populate the text field with secrets retrieved from Keychain.
-            rememberPassword = true
-            savedPasswordAvailable = stored != nil
-            await profileStore.setPreferredProfileID(id)
-        } catch {
-            guard profileSelectionGeneration == generation else { return }
-            profileErrorMessage = error.localizedDescription
-        }
+        // Do not read protected Keychain data while rendering connection UI.
+        // The secret is retrieved on explicit Connect only, for a matching endpoint.
+        rememberPassword = true
+        guard profileSelectionGeneration == generation else { return }
+        await profileStore.setPreferredProfileID(id)
     }
 
     public func deleteSelectedProfile() async {
@@ -264,8 +264,10 @@ public final class TreManaModel {
             if effectivePassword.isEmpty,
                sameEndpoint, shouldRemember, let chosenProfileID,
                !requestedUsername.isEmpty {
-                effectivePassword = try await profileStore.password(for: chosenProfileID) ?? ""
+                let storedPassword = try await profileStore.password(for: chosenProfileID)
                 guard connectionGeneration == generation else { return }
+                effectivePassword = storedPassword ?? ""
+                savedPasswordAvailable = storedPassword != nil
             }
 
             let credentials: RPCBasicCredentials? = requestedUsername.isEmpty

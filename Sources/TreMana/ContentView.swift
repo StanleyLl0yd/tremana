@@ -3,6 +3,22 @@ import AppKit
 import TreManaCore
 import UniformTypeIdentifiers
 
+// Same subtle burgundy glass tint for the connected and disconnected screens.
+private struct TreManaWindowTint: View {
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color.pink.opacity(0.085),
+                Color.purple.opacity(0.055),
+                Color.blue.opacity(0.035)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
+}
+
 private enum TorrentFilter: Hashable {
     case all
     case active
@@ -123,18 +139,7 @@ struct ContentView: View {
                 }
             }
         }
-        .background {
-            LinearGradient(
-                colors: [
-                    Color.pink.opacity(0.085),
-                    Color.purple.opacity(0.055),
-                    Color.blue.opacity(0.035)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        }
+        .background { TreManaWindowTint() }
         .task(id: refreshLoopIdentity) {
             // SwiftUI cancels the task when connection, phase or settings change.
             // First sleep avoids redundant fetch after Connect or torrent mutations.
@@ -407,11 +412,16 @@ private struct ConnectionView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if model.canReuseSavedPassword && model.rememberPassword
+                if model.hasMatchingSavedProfile && model.rememberPassword
                     && model.password.isEmpty {
-                    Label("Password saved securely. Leave the field empty to reuse it.", systemImage: "checkmark.shield")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Label(
+                        LocalizedStringKey(model.canReuseSavedPassword
+                            ? "Password saved securely. Leave the field empty to reuse it."
+                            : "Leave the password blank to reuse a saved password, if available."),
+                        systemImage: model.canReuseSavedPassword ? "checkmark.shield" : "key.horizontal"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
 
                 if model.selectedProfileID != nil {
@@ -442,6 +452,8 @@ private struct ConnectionView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background { TreManaWindowTint() }
         .navigationTitle("Connection")
         .task { await model.reloadProfiles() }
     }
