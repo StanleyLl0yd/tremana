@@ -217,3 +217,10 @@
 "Mixed" = "Смешанный";
 "Based on file priorities" = "Сводка приоритетов отдельных файлов";
 "Files selected" = "файлов выбрано";
+"Selected" = "Выделено";
+"Download selected" = "Скачивать выделенные";
+"Skip selected" = "Не скачивать выделенные";
+"Low priority" = "Низкий приоритет";
+"Normal priority" = "Обычный приоритет";
+"High priority" = "Высокий приоритет";
+"Selected file actions" = "Действия с выделенными файлами";

@@ -14,7 +14,6 @@ struct ContentView: View {
     @Environment(TreManaModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
-    @Environment(\.openSettings) private var openSettings
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
@@ -77,20 +76,6 @@ struct ContentView: View {
                 } else {
                     Spacer()
                 }
-
-                HStack {
-                    Button {
-                        openSettings()
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Settings")
-                    Spacer()
-                }
-                .font(.subheadline)
-                .padding(.horizontal, 15)
-                .padding(.vertical, 12)
 
                 if let version = Bundle.main.object(
                     forInfoDictionaryKey: "CFBundleShortVersionString"
@@ -273,34 +258,24 @@ private struct TorrentCommandBar: View {
                 )
             }
 
-            Menu {
-                Button {
-                    model.disconnect()
-                } label: {
-                    Label("Disconnect", systemImage: "network.slash")
-                }
+            Button {
+                model.disconnect()
             } label: {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(.green)
-                        .frame(width: 7, height: 7)
-                    Text(connectionName)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .font(.caption)
-                .padding(.horizontal, 9)
-                .frame(height: 28)
-                .background(.ultraThinMaterial, in: Capsule())
+                Label("Disconnect", systemImage: "network.slash")
+                    .lineLimit(1)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: 185)
-            .help("Connection")
-            .accessibilityLabel("Connection")
+            .buttonStyle(.borderless)
+            .fixedSize(horizontal: true, vertical: false)
+            .help("Disconnect")
+            .accessibilityIdentifier("toolbar.disconnect")
+
+            Text(connectionName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 150, alignment: .leading)
+                .help(connectionName)
 
             Divider().frame(height: 18)
 

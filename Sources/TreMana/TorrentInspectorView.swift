@@ -14,6 +14,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
 struct TorrentInspectorView: View {
     @Environment(TreManaModel.self) private var model
     @Binding var selectedTab: InspectorTab
+    @State private var selectedFileIndices: Set<Int> = []
     @State private var peerSortOrder: [KeyPathComparator<InspectorPeerRow>] = [
         KeyPathComparator(\.downRate, order: .reverse)
     ]
@@ -100,6 +101,7 @@ struct TorrentInspectorView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: selectedID) { _, _ in selectedFileIndices.removeAll() }
         .task(id: selectedID) {
             await model.loadSelectedTorrentDetails()
             guard let id = selectedID else { return }
@@ -194,67 +196,85 @@ struct TorrentInspectorView: View {
         let stats = detail.fileStats
         let hasStats = stats?.count == entries.count
         let wantedCount = stats?.filter(\.wanted).count ?? 0
-        let isQueueLocked = model.strictQueueTorrentIDs.contains(detail.id)
+        let queueLocked = model.strictQueueTorrentIDs.contains(detail.id)
+        let rows = entries.indices.map { FileTableEntry(
+            id: $0, file: entries[$0], stat: hasStats ? stats?[$0] : nil
+        ) }
+        let selection = selectedFileIndices.filter { entries.indices.contains($0) }.sorted()
 
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                if hasStats {
-                    Text("\(wantedCount) / \(entries.count)")
-                        .monospacedDigit()
-                    Text("Files selected")
-                } else {
-                    Text("File selection unavailable")
+                Text("\(wantedCount) / \(entries.count)")
+                    .monospacedDigit()
+                Text("Files selected")
+                if !selection.isEmpty {
+                    Text("·")
+                    Text("Selected")
+                    Text(selection.count, format: .number).monospacedDigit()
                 }
                 Spacer(minLength: 0)
+                if selection.count > 1, hasStats {
+                    FileBatchMenu(
+                        torrentID: detail.id,
+                        indices: selection,
+                        wantedCount: wantedCount,
+                        selectedWantedCount: selection.filter { stats?[$0].wanted == true }.count,
+                        queueLocked: queueLocked
+                    )
+                }
                 if model.strictQueuePendingIDs.contains(detail.id) {
                     Label("Ordered download pending", systemImage: "clock")
-                } else if isQueueLocked {
+                } else if queueLocked {
                     Label("Ordered download active", systemImage: "list.number")
                 }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 15)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7)
 
-            if entries.isEmpty {
+            if rows.isEmpty {
                 placeholder("No file metadata available", symbol: "doc")
             } else {
-                ScrollView([.vertical, .horizontal]) {
-                    LazyVStack(spacing: 0) {
-                        HStack(spacing: 12) {
-                            Text("Name")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text("Size")
-                                .frame(width: 78, alignment: .trailing)
-                            Text("Progress")
-                                .frame(width: 140, alignment: .center)
-                            Text("Download file")
-                                .frame(width: 72)
-                            Text("Priority")
-                                .frame(width: 115)
-                        }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .frame(height: 30)
-                        .padding(.horizontal, 12)
-                        .background(.ultraThinMaterial)
+                Table(rows, selection: $selectedFileIndices) {
+                    TableColumn("Name") { row in
+                        Label(row.file.name, systemImage: "doc")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(row.file.name)
+                    }
+                    .width(min: 190, ideal: 400)
 
-                        ForEach(entries.indices, id: \.self) { index in
-                            ZenFileRow(
-                                torrentID: detail.id,
-                                fileIndex: index,
-                                file: entries[index],
-                                stat: hasStats ? stats?[index] : nil,
-                                wantedCount: wantedCount,
-                                queueLocked: isQueueLocked
-                            )
+                    TableColumn("Size") { row in
+                        Text(size(row.file.length))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .width(min: 74, ideal: 94)
+
+                    TableColumn("Progress") { row in
+                        HStack(spacing: 7) {
+                            ProgressView(value: row.progress)
+                            Text(row.progress, format: .percent.precision(.fractionLength(1)))
+                                .font(.caption.monospacedDigit())
+                                .frame(width: 48, alignment: .trailing)
                         }
                     }
-                    .frame(minWidth: 720)
+                    .width(min: 100, ideal: 155)
+
+                    TableColumn("Download file") { row in
+                        FileWantedCell(torrentID: detail.id, row: row,
+                                       wantedCount: wantedCount, queueLocked: queueLocked)
+                    }
+                    .width(min: 72, ideal: 90)
+
+                    TableColumn("Priority") { row in
+                        FilePriorityCell(torrentID: detail.id, row: row)
+                    }
+                    .width(min: 100, ideal: 130)
                 }
-                .scrollIndicators(.automatic)
-                .accessibilityLabel("Files to download")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("files.table")
             }
         }
     }
@@ -457,125 +477,137 @@ struct TorrentInspectorView: View {
 }
 
 
-/// One wanted checkbox per file. The rightmost control edits only priority.
-private struct ZenFileRow: View {
-    @Environment(TreManaModel.self) private var model
-
-    let torrentID: Int
-    let fileIndex: Int
+private struct FileTableEntry: Identifiable {
+    let id: Int
     let file: TransmissionTorrentFile
     let stat: TransmissionTorrentFileStat?
-    let wantedCount: Int
-    let queueLocked: Bool
 
-    private var liveStat: TransmissionTorrentFileStat? {
-        guard let current = model.selectedTorrentDetail,
-              current.id == torrentID,
-              let stats = current.fileStats,
-              stats.indices.contains(fileIndex) else {
-            return stat
-        }
-        return stats[fileIndex]
-    }
-
-    private var ratio: Double {
+    var progress: Double {
         guard file.length > 0 else { return 1 }
         return min(1, max(0, Double(file.bytesCompleted) / Double(file.length)))
     }
+}
+
+private struct FileWantedCell: View {
+    @Environment(TreManaModel.self) private var model
+    let torrentID: Int
+    let row: FileTableEntry
+    let wantedCount: Int
+    let queueLocked: Bool
+
+    private var wanted: Bool {
+        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
+              let stats = detail.fileStats, stats.indices.contains(row.id) else {
+            return row.stat?.wanted ?? false
+        }
+        return stats[row.id].wanted
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "doc")
-                    .foregroundStyle(.secondary)
-                Text(file.name)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(file.name)
-                    .textSelection(.enabled)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(ByteCountFormatter.string(
-                fromByteCount: max(0, file.length), countStyle: .binary
-            ))
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .frame(width: 78, alignment: .trailing)
-
-            HStack(spacing: 7) {
-                ProgressView(value: ratio)
-                    .progressViewStyle(.linear)
-                Text(ratio, format: .percent.precision(.fractionLength(1)))
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 43, alignment: .trailing)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 140)
-
-            Group {
-                if let stat {
-                    Toggle("Download file", isOn: Binding(
-                        get: { liveStat?.wanted ?? stat.wanted },
-                        set: { next in
-                            Task {
-                                await model.setFileWanted(
-                                    torrentID: torrentID,
-                                    fileIndex: fileIndex,
-                                    wanted: next,
-                                    expectedWanted: liveStat?.wanted ?? stat.wanted
-                                )
-                            }
+        Group {
+            if row.stat != nil {
+                Toggle("Download file", isOn: Binding(
+                    get: { wanted },
+                    set: { next in
+                        let previous = wanted
+                        Task {
+                            await model.setFileWanted(
+                                torrentID: torrentID, fileIndex: row.id,
+                                wanted: next, expectedWanted: previous
+                            )
                         }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .labelsHidden()
-                    .help(queueLocked ? "Disable ordered downloading before changing file selection"
-                          : "Download file")
-                    .disabled(model.isBusy || queueLocked
-                        || (stat.wanted && wantedCount == 1))
-                    .accessibilityIdentifier("file.wanted.\(fileIndex)")
-                } else {
-                    Text("—").foregroundStyle(.tertiary)
-                }
-            }
-            .frame(width: 72)
-
-            Group {
-                if let stat {
-                    Picker("Priority", selection: Binding(
-                        get: { liveStat?.priority ?? stat.priority },
-                        set: { next in
-                            Task {
-                                await model.setFilePriority(
-                                    torrentID: torrentID,
-                                    fileIndex: fileIndex,
-                                    priority: next,
-                                    expectedPriority: liveStat?.priority ?? stat.priority
-                                )
-                            }
-                        }
-                    )) {
-                        Text("Low").tag(-1)
-                        Text("Normal").tag(0)
-                        Text("High").tag(1)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .disabled(model.isBusy)
-                    .accessibilityIdentifier("file.priority.\(fileIndex)")
-                } else {
-                    Text("—").foregroundStyle(.tertiary)
-                }
+                ))
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .disabled(model.isBusy || queueLocked || (wanted && wantedCount == 1))
+                .help(queueLocked
+                    ? "Disable ordered downloading before changing file selection"
+                    : "Download file")
+                .accessibilityIdentifier("file.wanted.\(row.id)")
+            } else {
+                Text("—").foregroundStyle(.tertiary)
             }
-            .frame(width: 115)
         }
-        .font(.subheadline)
-        .frame(height: 36)
-        .padding(.horizontal, 12)
-        .background(fileIndex.isMultiple(of: 2) ? Color.primary.opacity(0.018) : .clear)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.24)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct FilePriorityCell: View {
+    @Environment(TreManaModel.self) private var model
+    let torrentID: Int
+    let row: FileTableEntry
+
+    private var priority: Int {
+        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
+              let stats = detail.fileStats, stats.indices.contains(row.id) else {
+            return row.stat?.priority ?? 0
+        }
+        return stats[row.id].priority
+    }
+
+    var body: some View {
+        Group {
+            if row.stat != nil {
+                Picker("Priority", selection: Binding(
+                    get: { priority },
+                    set: { value in
+                        let previous = priority
+                        Task {
+                            await model.setFilePriority(
+                                torrentID: torrentID, fileIndex: row.id,
+                                priority: value, expectedPriority: previous
+                            )
+                        }
+                    }
+                )) {
+                    Text("Low").tag(-1)
+                    Text("Normal").tag(0)
+                    Text("High").tag(1)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .disabled(model.isBusy)
+                .accessibilityIdentifier("file.priority.\(row.id)")
+            } else {
+                Text("—").foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct FileBatchMenu: View {
+    @Environment(TreManaModel.self) private var model
+    let torrentID: Int
+    let indices: [Int]
+    let wantedCount: Int
+    let selectedWantedCount: Int
+    let queueLocked: Bool
+
+    var body: some View {
+        Menu {
+            Button("Download selected") { apply(.download(true)) }
+                .disabled(queueLocked)
+            Button("Skip selected") { apply(.download(false)) }
+                .disabled(queueLocked || selectedWantedCount >= wantedCount)
+            Divider()
+            Button("Low priority") { apply(.priority(-1)) }
+            Button("Normal priority") { apply(.priority(0)) }
+            Button("High priority") { apply(.priority(1)) }
+        } label: {
+            Label("Selected file actions", systemImage: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(model.isBusy)
+        .accessibilityIdentifier("files.bulk-actions")
+    }
+
+    private func apply(_ action: FileBatchAction) {
+        Task {
+            await model.applyFileBatch(
+                torrentID: torrentID, indices: indices, action: action
+            )
         }
     }
 }

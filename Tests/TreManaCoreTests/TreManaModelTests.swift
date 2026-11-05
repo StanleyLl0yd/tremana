@@ -401,6 +401,77 @@ struct TreManaModelTests {
         #expect(await remote.filePriorityCalls().count == 1)
     }
 
+    @Test @MainActor func batchFileActionsApplyToSelectionAndVerifyServer() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)],
+            wantedStates: [true, true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        await model.applyFileBatch(
+            torrentID: 1, indices: [2, 1], action: .download(false)
+        )
+        #expect(model.selectedTorrentDetail?.fileStats?.map(\.wanted) == [true, false, false])
+        #expect(await remote.fileSelectionCalls().count == 2)
+        #expect(model.noticeMessage == "File selection updated")
+
+        await model.applyFileBatch(
+            torrentID: 1, indices: [2, 0], action: .priority(1)
+        )
+        #expect(model.selectedTorrentDetail?.fileStats?.map(\.priority) == [1, 0, 1])
+        #expect(await remote.filePriorityCalls().count == 2)
+        #expect(model.noticeMessage == "File priority updated")
+    }
+
+    @Test @MainActor func batchCannotDeselectLastFileOrUseInvalidIndices() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)],
+            wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        await model.applyFileBatch(
+            torrentID: 1, indices: [0, 1], action: .download(false)
+        )
+        #expect(model.errorMessage == TransmissionRPCError.lastWantedFile.localizedDescription)
+        #expect(await remote.fileSelectionCalls().isEmpty)
+
+        for ids in [[Int](), [-1], [0, 0], [5]] {
+            await model.applyFileBatch(
+                torrentID: 1, indices: ids, action: .priority(1)
+            )
+        }
+        #expect(await remote.filePriorityCalls().isEmpty)
+        #expect(model.selectedTorrentDetail?.fileStats?.map(\.wanted) == [true, true])
+    }
+
+    @Test @MainActor func batchRejectsExternalPriorityDriftWithoutMutation() async {
+        let remote = ControlledRPC(
+            hold: .none, torrents: [fixtureTorrent(1)],
+            wantedStates: [true, true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+        await remote.replacePriorityStates([1, 0, 0])
+
+        await model.applyFileBatch(
+            torrentID: 1, indices: [0, 2], action: .priority(-1)
+        )
+        #expect(await remote.filePriorityCalls().isEmpty)
+        #expect(model.errorMessage == TransmissionRPCError.fileSelectionChanged.localizedDescription)
+    }
+
     @Test @MainActor func fileWantedToggleConfirmsServerAndPreservesLastFile() async {
         let remote = ControlledRPC(
             hold: .none, torrents: [fixtureTorrent(1)], wantedStates: [true, true]
@@ -772,6 +843,43 @@ private actor ControlledRPC: TransmissionRPCProviding {
         }
         states[fileIndex] = priority
         priorityStates = states
+    }
+
+    func setFilesPriority(
+        torrentID: Int, fileIndices: [Int], priority: Int
+    ) async throws {
+        guard !rejectFileChanges,
+              var states = priorityStates,
+              !fileIndices.isEmpty,
+              fileIndices.allSatisfy({ states.indices.contains($0) }) else {
+            throw TransmissionRPCError.invalidFilePriority
+        }
+        for index in fileIndices {
+            states[index] = priority
+            changedPriorities.append((torrentID, index, priority))
+        }
+        priorityStates = states
+    }
+
+    func setQueueFileSelection(
+        torrentID: Int, wanted: [Int], unwanted: [Int]
+    ) async throws {
+        guard !rejectFileChanges,
+              var states = wantedStates,
+              !wanted.isEmpty,
+              wanted.allSatisfy({ states.indices.contains($0) }),
+              unwanted.allSatisfy({ states.indices.contains($0) }) else {
+            throw TransmissionRPCError.invalidFileSelection
+        }
+        for index in wanted {
+            if !states[index] { changedFiles.append((torrentID, index, true)) }
+            states[index] = true
+        }
+        for index in unwanted {
+            if states[index] { changedFiles.append((torrentID, index, false)) }
+            states[index] = false
+        }
+        wantedStates = states
     }
 
     func filePriorityCalls() -> [(torrentID: Int, fileIndex: Int, priority: Int)] {
