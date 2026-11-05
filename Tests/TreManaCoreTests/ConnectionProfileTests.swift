@@ -145,9 +145,13 @@ func fixtureProfile(id: UUID = UUID()) -> ConnectionProfile {
 
 actor MemoryPasswords: RPCPasswordStoring {
     private var values: [UUID: String] = [:]
+    private var reads = 0
+
+    func readCallCount() -> Int { reads }
 
     func read(for id: UUID) async throws -> String? {
-        values[id]
+        reads += 1
+        return values[id]
     }
 
     func upsert(_ password: String, for id: UUID) async throws {
