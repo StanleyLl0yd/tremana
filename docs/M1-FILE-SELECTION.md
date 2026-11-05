@@ -42,3 +42,15 @@ Use only a disposable multi-file test torrent; never test against valuable data.
 GitHub CI covers exact RPC payloads, invalid indices, last-file refusal,
 stale server changes and error handling. Passing CI alone does not count as
 real-device acceptance.
+
+## Multi-selection context menu (0.4.2)
+
+The Files table supports native Command-click / Shift-click selection. Right-click
+selected rows to perform Download, Skip, Low, Normal or High on the context
+selection. There is no separate bulk-action toolbar. The action is enabled for
+one or more rows with valid file stats; it never acts on all files implicitly.
+Server revalidation and last-wanted-file protections remain mandatory.
+
+Manual macOS check: right-click one selected row, then three selected rows; verify
+that only the intended indices change. Right-clicking a different, unselected
+row must act on that row, not on the earlier selection.
