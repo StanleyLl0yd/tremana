@@ -112,3 +112,18 @@ References:
 - https://docs.github.com/actions/reference/workflows-and-actions/deployments-and-environments
 - https://developer.apple.com/library/archive/technotes/tn2206/
 - https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements
+
+## Deferred Keychain reads (0.4.3)
+
+Opening a remembered connection or selecting a profile reads only nonsecret
+metadata and does **not** query the Keychain password. The first password read
+happens on explicit Connect, and only for an unchanged matching endpoint.
+The same app signature, item service/account identifiers and restricted ACLs
+are retained. macOS can still request one-time permission after an app update;
+choose **Always Allow** only for the expected signed TreMana. Never grant all
+apps access to the secret.
+
+The mock-store regression test counts password reads, requiring zero during
+profile display/selection and a read only after Connect. CI cannot verify
+cross-version Keychain behavior on the user's actual Mac; signed update and
+relaunch tests remain mandatory.
