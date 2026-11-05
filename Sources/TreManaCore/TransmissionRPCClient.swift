@@ -250,6 +250,29 @@ public actor TransmissionRPCClient {
         )
     }
 
+    public func setFilesPriority(
+        torrentID: Int, fileIndices: [Int], priority: Int
+    ) async throws {
+        guard torrentID > 0 else {
+            throw TransmissionRPCError.invalidTorrentSelection
+        }
+        guard !fileIndices.isEmpty,
+              Set(fileIndices).count == fileIndices.count,
+              fileIndices.allSatisfy({ $0 >= 0 }),
+              (-1...1).contains(priority) else {
+            throw TransmissionRPCError.invalidFilePriority
+        }
+        let field = priority == -1 ? "priority-low"
+            : priority == 1 ? "priority-high" : "priority-normal"
+        let _: RPCReply<EmptyRPCArguments> = try await send(
+            "torrent-set",
+            arguments: [
+                "ids": .array([.integer(torrentID)]),
+                field: .array(fileIndices.sorted().map { .integer($0) })
+            ]
+        )
+    }
+
     public func setQueueFileSelection(
         torrentID: Int, wanted: [Int], unwanted: [Int]
     ) async throws {

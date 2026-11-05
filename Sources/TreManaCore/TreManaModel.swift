@@ -8,6 +8,7 @@ public protocol TransmissionRPCProviding: Sendable {
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail?
     func setFileWanted(torrentID: Int, fileIndex: Int, wanted: Bool) async throws
     func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws
+    func setFilesPriority(torrentID: Int, fileIndices: [Int], priority: Int) async throws
     func setQueueFileSelection(
         torrentID: Int, wanted: [Int], unwanted: [Int]
     ) async throws
@@ -25,6 +26,12 @@ extension TransmissionRPCProviding {
     }
 
     public func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws {
+        throw TransmissionRPCError.invalidFilePriority
+    }
+
+    public func setFilesPriority(
+        torrentID: Int, fileIndices: [Int], priority: Int
+    ) async throws {
         throw TransmissionRPCError.invalidFilePriority
     }
 
@@ -54,6 +61,14 @@ extension TransmissionRPCProviding {
 }
 
 extension TransmissionRPCClient: TransmissionRPCProviding {}
+
+
+/// Explicit, bounded batch operation for one selected torrent.
+/// Never translates file selection into a priority change or vice versa.
+public enum FileBatchAction: Sendable, Equatable {
+    case download(Bool)
+    case priority(Int)
+}
 
 @MainActor
 @Observable
@@ -574,6 +589,135 @@ public final class TreManaModel {
             }
             errorMessage = nil
             noticeMessage = "File priority updated"
+        } catch {
+            guard connectionGeneration == ticket else { return }
+            errorMessage = error.localizedDescription
+            noticeMessage = nil
+            if selectedTorrentDetail == nil {
+                detailErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    public func applyFileBatch(
+        torrentID: Int, indices requestedIndices: [Int], action: FileBatchAction
+    ) async {
+        guard let client, !isBusy, torrentID > 0,
+              selectedTorrentIDs == Set([torrentID]),
+              torrents.contains(where: { $0.id == torrentID }),
+              let displayed = selectedTorrentDetail,
+              displayed.id == torrentID,
+              let displayedHash = displayed.hashString, !displayHash.isEmpty,
+              let displayedFiles = displayed.files,
+              let displayedStats = displayed.fileStats,
+              !displayedFiles.isEmpty,
+              displayedFiles.count == displayedStats.count,
+              !requestedIndices.isEmpty,
+              Set(requestedIndices).count == requestedIndices.count,
+              requestedIndices.allSatisfy({ displayedFiles.indices.contains($0) })
+        else {
+            errorMessage = TransmissionRPCError.invalidFileSelection.localizedDescription
+            return
+        }
+        let indices = requestedIndices.sorted()
+        if case .download = action, strictQueueTorrentIDs.contains(torrentID) {
+            errorMessage = TransmissionRPCError.fileSelectionChanged.localizedDescription
+            return
+        }
+        if case let .priority(value) = action, !(-1...1).contains(value) {
+            errorMessage = TransmissionRPCError.invalidFilePriority.localizedDescription
+            return
+        }
+
+        mutationGeneration &+= 1
+        detailGeneration &+= 1
+        isLoadingDetail = false
+        detailErrorMessage = nil
+        let ticket = connectionGeneration
+        isBusy = true
+        editingFileSelectionForID = torrentID
+        defer {
+            if connectionGeneration == ticket {
+                editingFileSelectionForID = nil
+                isBusy = false
+            }
+        }
+
+        do {
+            guard let current = try await client.torrentDetails(id: torrentID),
+                  connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            guard current.hashString == displayedHash,
+                  let files = current.files, let stats = current.fileStats,
+                  files.count == displayedFiles.count,
+                  stats.count == displayedStats.count,
+                  zip(files, displayedFiles).allSatisfy({
+                      $0.name == $1.name && $0.length == $1.length
+                  }),
+                  zip(stats, displayedStats).allSatisfy({
+                      $0.wanted == $1.wanted && $0.priority == $1.priority
+                  }) else {
+                selectedTorrentDetail = current
+                throw TransmissionRPCError.fileSelectionChanged
+            }
+
+            switch action {
+            case .download(let download):
+                var desired = stats.map(\.wanted)
+                for index in indices { desired[index] = download }
+                guard desired.contains(true) else {
+                    throw TransmissionRPCError.lastWantedFile
+                }
+                guard desired != stats.map(\.wanted) else { return }
+                let wanted = desired.indices.filter { desired[$0] }
+                let unwanted = desired.indices.filter { !desired[$0] }
+                try await client.setQueueFileSelection(
+                    torrentID: torrentID, wanted: wanted, unwanted: unwanted
+                )
+            case .priority(let value):
+                guard indices.contains(where: { stats[$0].priority != value }) else {
+                    return
+                }
+                try await client.setFilesPriority(
+                    torrentID: torrentID, fileIndices: indices, priority: value
+                )
+            }
+            guard connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]) else { return }
+            selectedTorrentDetail = nil
+
+            guard let verified = try await client.torrentDetails(id: torrentID),
+                  connectionGeneration == ticket,
+                  selectedTorrentIDs == Set([torrentID]),
+                  verified.hashString == displayedHash,
+                  let postFiles = verified.files,
+                  let postStats = verified.fileStats,
+                  postFiles.count == displayedFiles.count,
+                  postStats.count == displayedStats.count,
+                  zip(postFiles, displayedFiles).allSatisfy({
+                      $0.name == $1.name && $0.length == $1.length
+                  }) else {
+                throw TransmissionRPCError.fileSelectionChanged
+            }
+            selectedTorrentDetail = verified
+            switch action {
+            case .download(let download):
+                guard indices.allSatisfy({ postStats[$0].wanted == download }) else {
+                    throw TransmissionRPCError.fileSelectionChanged
+                }
+                noticeMessage = "File selection updated"
+            case .priority(let value):
+                guard indices.allSatisfy({ postStats[$0].priority == value }) else {
+                    throw TransmissionRPCError.invalidFilePriority
+                }
+                noticeMessage = "File priority updated"
+            }
+            errorMessage = nil
+            // Keep the upper torrent priority summary in sync with the inspector.
+            if let refreshed = try? await client.torrents(),
+               connectionGeneration == ticket {
+                torrents = refreshed
+            }
         } catch {
             guard connectionGeneration == ticket else { return }
             errorMessage = error.localizedDescription
