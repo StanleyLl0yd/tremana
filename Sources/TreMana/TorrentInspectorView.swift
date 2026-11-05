@@ -475,126 +475,59 @@ struct TorrentInspectorView: View {
 }
 
 
-/// One wanted checkbox per file. The rightmost control edits only priority.
-private struct ZenFileRow: View {
-    @Environment(TreManaModel.self) private var model
-
-    let torrentID: Int
-    let fileIndex: Int
+private struct FileTableEntry: Identifiable {
+    let id: Int
     let file: TransmissionTorrentFile
     let stat: TransmissionTorrentFileStat?
-    let wantedCount: Int
-    let queueLocked: Bool
 
-    private var liveStat: TransmissionTorrentFileStat? {
-        guard let current = model.selectedTorrentDetail,
-              current.id == torrentID,
-              let stats = current.fileStats,
-              stats.indices.contains(fileIndex) else {
-            return stat
-        }
-        return stats[fileIndex]
-    }
-
-    private var ratio: Double {
+    var progress: Double {
         guard file.length > 0 else { return 1 }
         return min(1, max(0, Double(file.bytesCompleted) / Double(file.length)))
     }
+}
+
+private struct FileWantedCell: View {
+    @Environment(TreManaModel.self) private var model
+    let torrentID: Int
+    let row: FileTableEntry
+    let wantedCount: Int
+    let queueLocked: Bool
+
+    private var wanted: Bool {
+        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
+              let stats = detail.fileStats, stats.indices.contains(row.id) else {
+            return row.stat?.wanted ?? false
+        }
+        return stats[row.id].wanted
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "doc")
-                    .foregroundStyle(.secondary)
-                Text(file.name)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(file.name)
-                    .textSelection(.enabled)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(ByteCountFormatter.string(
-                fromByteCount: max(0, file.length), countStyle: .binary
-            ))
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .frame(width: 78, alignment: .trailing)
-
-            HStack(spacing: 7) {
-                ProgressView(value: ratio)
-                    .progressViewStyle(.linear)
-                Text(ratio, format: .percent.precision(.fractionLength(1)))
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 43, alignment: .trailing)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 140)
-
-            Group {
-                if let stat {
-                    Toggle("Download file", isOn: Binding(
-                        get: { liveStat?.wanted ?? stat.wanted },
-                        set: { next in
-                            Task {
-                                await model.setFileWanted(
-                                    torrentID: torrentID,
-                                    fileIndex: fileIndex,
-                                    wanted: next,
-                                    expectedWanted: liveStat?.wanted ?? stat.wanted
-                                )
-                            }
+        Group {
+            if row.stat != nil {
+                Toggle("Download file", isOn: Binding(
+                    get: { wanted },
+                    set: { next in
+                        let previous = wanted
+                        Task {
+                            await model.setFileWanted(
+                                torrentID: torrentID, fileIndex: row.id,
+                                wanted: next, expectedWanted: previous
+                            )
                         }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .labelsHidden()
-                    .help(queueLocked ? "Disable ordered downloading before changing file selection"
-                          : "Download file")
-                    .disabled(model.isBusy || queueLocked
-                        || (stat.wanted && wantedCount == 1))
-                    .accessibilityIdentifier("file.wanted.\(fileIndex)")
-                } else {
-                    Text("—").foregroundStyle(.tertiary)
-                }
-            }
-            .frame(width: 72)
-
-            Group {
-                if let stat {
-                    Picker("Priority", selection: Binding(
-                        get: { liveStat?.priority ?? stat.priority },
-                        set: { next in
-                            Task {
-                                await model.setFilePriority(
-                                    torrentID: torrentID,
-                                    fileIndex: fileIndex,
-                                    priority: next,
-                                    expectedPriority: liveStat?.priority ?? stat.priority
-                                )
-                            }
-                        }
-                    )) {
-                        Text("Low").tag(-1)
-                        Text("Normal").tag(0)
-                        Text("High").tag(1)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .disabled(model.isBusy)
-                    .accessibilityIdentifier("file.priority.\(fileIndex)")
-                } else {
-                    Text("—").foregroundStyle(.tertiary)
-                }
+                ))
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .disabled(model.isBusy || queueLocked || (wanted && wantedCount == 1))
+                .help(queueLocked
+                    ? "Disable ordered downloading before changing file selection"
+                    : "Download file")
+                .accessibilityIdentifier("file.wanted.\(row.id)")
+            } else {
+                Text("—").foregroundStyle(.tertiary)
             }
-            .frame(width: 115)
         }
-        .font(.subheadline)
-        .frame(height: 36)
-        .padding(.horizontal, 12)
-        .background(fileIndex.isMultiple(of: 2) ? Color.primary.opacity(0.018) : .clear)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.24)
-        }
+        .frame(maxWidth: .infinity)
     }
 }
 
