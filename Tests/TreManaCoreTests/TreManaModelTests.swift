@@ -58,6 +58,36 @@ struct TreManaModelTests {
         #expect(try await profiles.list().count == 1)
     }
 
+    @Test @MainActor func selectingProfileDoesNotReadKeychainBeforeExplicitConnect() async throws {
+        let suiteName = "TreMana.DeferredKeychain.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let passwords = MemoryPasswords()
+        let store = UserDefaultsProfileStore(suiteName: suiteName, passwords: passwords)
+        let profile = fixtureProfile()
+        try await store.save(profile, password: .replace("secret"))
+        #expect(await passwords.readCallCount() == 0)
+
+        let remote = ControlledRPC(hold: .none, torrents: [])
+        let model = TreManaModel(makeClient: { _ in remote }, profileStore: store)
+        await store.setPreferredProfileID(profile.id)
+        await model.reloadProfiles()
+        #expect(model.selectedProfileID == profile.id)
+        #expect(model.hasMatchingSavedProfile)
+        #expect(model.rememberPassword)
+        #expect(!model.savedPasswordAvailable)
+        #expect(model.password.isEmpty)
+        #expect(await passwords.readCallCount() == 0)
+
+        await model.chooseProfile(profile.id)
+        #expect(await passwords.readCallCount() == 0)
+        await model.connect()
+        #expect(model.isConnected)
+        #expect(model.savedPasswordAvailable)
+        #expect(await passwords.readCallCount() >= 1)
+    }
+
     @Test @MainActor func noOptInNeverStoresCredentials() async throws {
         let suiteName = "TreMana.OptOut.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
