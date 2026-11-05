@@ -217,3 +217,10 @@
 "Mixed" = "Mixed";
 "Based on file priorities" = "Based on file priorities";
 "Files selected" = "files selected";
+"Selected" = "Selected";
+"Download selected" = "Download selected";
+"Skip selected" = "Skip selected";
+"Low priority" = "Low priority";
+"Normal priority" = "Normal priority";
+"High priority" = "High priority";
+"Selected file actions" = "Selected file actions";
