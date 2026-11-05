@@ -774,6 +774,43 @@ private actor ControlledRPC: TransmissionRPCProviding {
         priorityStates = states
     }
 
+    func setFilesPriority(
+        torrentID: Int, fileIndices: [Int], priority: Int
+    ) async throws {
+        guard !rejectFileChanges,
+              var states = priorityStates,
+              !fileIndices.isEmpty,
+              fileIndices.allSatisfy({ states.indices.contains($0) }) else {
+            throw TransmissionRPCError.invalidFilePriority
+        }
+        for index in fileIndices {
+            states[index] = priority
+            changedPriorities.append((torrentID, index, priority))
+        }
+        priorityStates = states
+    }
+
+    func setQueueFileSelection(
+        torrentID: Int, wanted: [Int], unwanted: [Int]
+    ) async throws {
+        guard !rejectFileChanges,
+              var states = wantedStates,
+              !wanted.isEmpty,
+              wanted.allSatisfy({ states.indices.contains($0) }),
+              unwanted.allSatisfy({ states.indices.contains($0) }) else {
+            throw TransmissionRPCError.invalidFileSelection
+        }
+        for index in wanted {
+            if !states[index] { changedFiles.append((torrentID, index, true)) }
+            states[index] = true
+        }
+        for index in unwanted {
+            if states[index] { changedFiles.append((torrentID, index, false)) }
+            states[index] = false
+        }
+        wantedStates = states
+    }
+
     func filePriorityCalls() -> [(torrentID: Int, fileIndex: Int, priority: Int)] {
         changedPriorities
     }
