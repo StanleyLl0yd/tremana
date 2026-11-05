@@ -607,7 +607,7 @@ public final class TreManaModel {
               torrents.contains(where: { $0.id == torrentID }),
               let displayed = selectedTorrentDetail,
               displayed.id == torrentID,
-              let displayedHash = displayed.hashString, !displayHash.isEmpty,
+              let displayedHash = displayed.hashString, !displayedHash.isEmpty,
               let displayedFiles = displayed.files,
               let displayedStats = displayed.fileStats,
               !displayedFiles.isEmpty,
