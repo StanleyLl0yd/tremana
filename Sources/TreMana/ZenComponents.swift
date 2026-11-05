@@ -3,23 +3,23 @@ import TreManaCore
 
 struct ConnectionHero: View {
     var body: some View {
-        HStack(alignment: .center, spacing: 18) {
+        HStack(alignment: .center, spacing: 12) {
             Image(systemName: "externaldrive.fill")
-                .font(.system(size: 28, weight: .medium))
+                .font(.system(size: 23, weight: .medium))
                 .foregroundStyle(.primary)
-                .frame(width: 64, height: 64)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+                .frame(width: 46, height: 46)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 13))
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("Connect to Transmission")
-                    .font(.title2.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                 Text("Your downloads, quietly under control.")
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 }
