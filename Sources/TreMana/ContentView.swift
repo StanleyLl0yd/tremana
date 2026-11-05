@@ -625,12 +625,12 @@ private struct TorrentTableView: View {
                     }
                 .accessibilityLabel("Transmission torrents")
                 .alternatingRowBackgrounds(.disabled)
-                .frame(minHeight: 180, idealHeight: 320)
+                .frame(minHeight: 120, idealHeight: 170)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                 .clipShape(RoundedRectangle(cornerRadius: 16))
 
                 TorrentInspectorView(selectedTab: $inspectorTab)
-                    .frame(minHeight: 190, idealHeight: 300)
+                    .frame(minHeight: 280, idealHeight: 560)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }

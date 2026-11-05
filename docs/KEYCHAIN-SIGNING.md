@@ -85,10 +85,21 @@ Protect the archive with a strong unique password (at least 24 bytes).
   The ZIP must be downloaded back from GitHub and byte-compared after release.
 
 The first change from an ad-hoc signature to the stable certificate may still
-cause a single Keychain authorization prompt. Test *two consecutive signed
-versions*, because a single build cannot prove an update behaves correctly.
-Keep the same app bundle identifier `com.sl.tremana` and existing Keychain
-service/account identifiers across all versions.
+cause a single Keychain authorization prompt. Since 0.4.2, saving or replacing
+a password also sets a macOS file-based Keychain ACL explicitly restricted to
+the currently signed TreMana app (using its designated requirement), instead
+of inheriting a legacy ad-hoc app identity. This does **not** silently erase or
+weaken ACLs on existing credentials. A pre-existing item may still require the
+user to select **Always Allow** once and enter the login Keychain password,
+or to re-enter the server password to update its ACL. **Do not** recommend
+"Allow all applications to access this item": it expands access to secrets.
+
+Test *two consecutive signed versions* with the same stored password; a single
+build cannot prove update persistence. A recurring prompt after **Always Allow**
+must be diagnosed on the actual Mac (Keychain item Access Control, signed app
+designated requirement, Keychain lock state) and must not be reported as fixed
+by unit tests alone. Keep bundle identifier `com.sl.tremana` and Keychain
+service/account identifiers unchanged across all versions.
 
 ## After local setup
 

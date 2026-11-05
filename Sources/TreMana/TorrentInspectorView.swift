@@ -213,15 +213,6 @@ struct TorrentInspectorView: View {
                     Text(selection.count, format: .number).monospacedDigit()
                 }
                 Spacer(minLength: 0)
-                if selection.count > 1, hasStats {
-                    FileBatchMenu(
-                        torrentID: detail.id,
-                        indices: selection,
-                        wantedCount: wantedCount,
-                        selectedWantedCount: selection.filter { stats?[$0].wanted == true }.count,
-                        queueLocked: queueLocked
-                    )
-                }
                 if model.strictQueuePendingIDs.contains(detail.id) {
                     Label("Ordered download pending", systemImage: "clock")
                 } else if queueLocked {
@@ -272,6 +263,18 @@ struct TorrentInspectorView: View {
                         FilePriorityCell(torrentID: detail.id, row: row)
                     }
                     .width(min: 100, ideal: 130)
+                }
+                .contextMenu(forSelectionType: Int.self) { clicked in
+                    let chosen = clicked.filter { entries.indices.contains($0) }.sorted()
+                    if !chosen.isEmpty && hasStats {
+                        FileBatchActions(
+                            torrentID: detail.id,
+                            indices: chosen,
+                            wantedCount: wantedCount,
+                            selectedWantedCount: chosen.filter { stats?[$0].wanted == true }.count,
+                            queueLocked: queueLocked
+                        )
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("files.table")
@@ -577,7 +580,7 @@ private struct FilePriorityCell: View {
     }
 }
 
-private struct FileBatchMenu: View {
+private struct FileBatchActions: View {
     @Environment(TreManaModel.self) private var model
     let torrentID: Int
     let indices: [Int]
@@ -585,25 +588,26 @@ private struct FileBatchMenu: View {
     let selectedWantedCount: Int
     let queueLocked: Bool
 
+    // Presented by Table's native selection context menu, not a separate toolbar.
+    // The indices come from the context selection, never all files by default.
     var body: some View {
-        Menu {
+        Group {
             Button("Download selected") { apply(.download(true)) }
-                .disabled(queueLocked)
+                .disabled(queueLocked || model.isBusy)
             Button("Skip selected") { apply(.download(false)) }
-                .disabled(queueLocked || selectedWantedCount >= wantedCount)
+                .disabled(queueLocked || model.isBusy || selectedWantedCount >= wantedCount)
             Divider()
             Button("Low priority") { apply(.priority(-1)) }
+                .disabled(model.isBusy)
             Button("Normal priority") { apply(.priority(0)) }
+                .disabled(model.isBusy)
             Button("High priority") { apply(.priority(1)) }
-        } label: {
-            Label("Selected file actions", systemImage: "ellipsis.circle")
+                .disabled(model.isBusy)
         }
-        .menuStyle(.borderlessButton)
-        .disabled(model.isBusy)
-        .accessibilityIdentifier("files.bulk-actions")
     }
 
     private func apply(_ action: FileBatchAction) {
+        guard !indices.isEmpty else { return }
         Task {
             await model.applyFileBatch(
                 torrentID: torrentID, indices: indices, action: action
