@@ -49,11 +49,14 @@ struct TreManaModelTests {
         #expect(relaunched.rpcURL == first.rpcURL)
         #expect(relaunched.username == "transmission")
         #expect(relaunched.rememberPassword)
-        #expect(relaunched.savedPasswordAvailable)
+        // Password availability remains unknown until an explicit Connect.
+        #expect(relaunched.hasMatchingSavedProfile)
+        #expect(!relaunched.savedPasswordAvailable)
         #expect(relaunched.password.isEmpty)
 
         await relaunched.connect()
         #expect(relaunched.isConnected)
+        #expect(relaunched.savedPasswordAvailable)
         #expect(capture.connection?.credentials?.password == "secret-value")
         #expect(try await profiles.list().count == 1)
     }
