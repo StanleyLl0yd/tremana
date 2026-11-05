@@ -439,6 +439,47 @@ struct TransmissionRPCTests {
         #expect(MockURLProtocol.responses.requestCount == 1)
     }
 
+    @Test func batchPrioritySendsOnlyExplicitSortedIndices() async throws {
+        MockURLProtocol.responses.replace([
+            MockResponse(body: #"{"result":"success"}"#)
+        ])
+        let client = try makeClient()
+        try await client.setFilesPriority(
+            torrentID: 7, fileIndices: [3, 1], priority: 1
+        )
+        let request = try #require(MockURLProtocol.responses.lastRequest)
+        #expect(request["method"] as? String == "torrent-set")
+        let args = try #require(request["arguments"] as? [String: Any])
+        #expect(args["ids"] as? [Int] == [7])
+        #expect(args["priority-high"] as? [Int] == [1, 3])
+        #expect(args["files-wanted"] == nil)
+        #expect(args["files-unwanted"] == nil)
+    }
+
+    @Test func invalidBatchPriorityNeverTouchesTransmission() async throws {
+        MockURLProtocol.responses.replace([])
+        let client = try makeClient()
+        for indices in [[Int](), [-1], [1, 1]] {
+            do {
+                try await client.setFilesPriority(
+                    torrentID: 7, fileIndices: indices, priority: 1
+                )
+                Issue.record("Invalid batch accepted")
+            } catch let error as TransmissionRPCError {
+                #expect(error == .invalidFilePriority)
+            }
+        }
+        do {
+            try await client.setFilesPriority(
+                torrentID: 0, fileIndices: [1], priority: 0
+            )
+            Issue.record("Invalid torrent accepted")
+        } catch let error as TransmissionRPCError {
+            #expect(error == .invalidTorrentSelection)
+        }
+        #expect(MockURLProtocol.responses.requestCount == 0)
+    }
+
     @Test func invalidPriorityNeverContactsDaemon() async throws {
         MockURLProtocol.responses.replace([])
         let client = try makeClient()
