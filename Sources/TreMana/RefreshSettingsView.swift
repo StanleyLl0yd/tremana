@@ -73,6 +73,8 @@ struct RefreshSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .frame(width: 490, height: 505)
+        .background { TreManaWindowTint(intensity: 0.72) }
     }
 }

@@ -24,7 +24,7 @@ struct TreManaApp: App {
                 .environment(model)
                 .environment(\.locale, interfaceLocale)
                 .preferredColorScheme(preferredAppearance)
-                .frame(minWidth: 840, minHeight: 560)
+                .frame(minWidth: 750, minHeight: 510)
         }
         .defaultSize(width: 1140, height: 740)
 
