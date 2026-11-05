@@ -3,22 +3,6 @@ import AppKit
 import TreManaCore
 import UniformTypeIdentifiers
 
-// Same subtle burgundy glass tint for the connected and disconnected screens.
-private struct TreManaWindowTint: View {
-    var body: some View {
-        LinearGradient(
-            colors: [
-                Color.pink.opacity(0.085),
-                Color.purple.opacity(0.055),
-                Color.blue.opacity(0.035)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
-}
-
 private enum TorrentFilter: Hashable {
     case all
     case active
@@ -34,7 +18,7 @@ struct ContentView: View {
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @State private var filter: TorrentFilter? = .all
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var showingAddTorrent = false
     @State private var searchText = ""
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
@@ -56,7 +40,9 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        Group {
+            if model.isConnected {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
                 HStack {
                     Text("Downloads")
@@ -76,22 +62,18 @@ struct ContentView: View {
                 .padding(.top, 20)
                 .padding(.bottom, 8)
 
-                if model.isConnected {
-                    List(selection: $filter) {
-                        sidebarItem("All Torrents", icon: "tray.full", filter: .all,
-                                    count: model.torrents.count)
-                        sidebarItem("Active", icon: "arrow.down.circle", filter: .active,
-                                    count: model.torrents.filter { [1, 2, 3, 4, 5, 6].contains($0.status) }.count)
-                        sidebarItem("Completed", icon: "checkmark.circle", filter: .completed,
-                                    count: model.torrents.filter { $0.percentDone >= 1 }.count)
-                        sidebarItem("Paused", icon: "pause.circle", filter: .paused,
-                                    count: model.torrents.filter { $0.status == 0 }.count)
-                    }
-                    .listStyle(.sidebar)
-                    .scrollContentBackground(.hidden)
-                } else {
-                    Spacer()
+                List(selection: $filter) {
+                    sidebarItem("All Torrents", icon: "tray.full", filter: .all,
+                                count: model.torrents.count)
+                    sidebarItem("Active", icon: "arrow.down.circle", filter: .active,
+                                count: model.torrents.filter { [1, 2, 3, 4, 5, 6].contains($0.status) }.count)
+                    sidebarItem("Completed", icon: "checkmark.circle", filter: .completed,
+                                count: model.torrents.filter { $0.percentDone >= 1 }.count)
+                    sidebarItem("Paused", icon: "pause.circle", filter: .paused,
+                                count: model.torrents.filter { $0.status == 0 }.count)
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
 
                 if let version = Bundle.main.object(
                     forInfoDictionaryKey: "CFBundleShortVersionString"
@@ -112,34 +94,28 @@ struct ContentView: View {
             .toolbar(removing: .sidebarToggle)
         } detail: {
             VStack(spacing: 0) {
-                if model.isConnected {
-                    TorrentCommandBar(
-                        showSidebar: columnVisibility == .detailOnly,
-                        revealSidebar: { columnVisibility = .all },
-                        add: { showingAddTorrent = true },
-                        presentation: $toolbarPresentation,
-                        searchText: $searchText
-                    )
-                    Divider()
-                    TorrentTableView(filter: filter ?? .all, searchText: searchText)
-                } else {
-                    if columnVisibility == .detailOnly {
-                        HStack {
-                            Button {
-                                columnVisibility = .all
-                            } label: {
-                                Label("Show Sidebar", systemImage: "sidebar.left")
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.top, 9)
-                    }
+                TorrentCommandBar(
+                    showSidebar: columnVisibility == .detailOnly,
+                    revealSidebar: { columnVisibility = .all },
+                    add: { showingAddTorrent = true },
+                    presentation: $toolbarPresentation,
+                    searchText: $searchText
+                )
+                Divider()
+                TorrentTableView(filter: filter ?? .all, searchText: searchText)
+            }
+        }
+            } else {
+                NavigationStack {
                     ConnectionView()
                 }
             }
         }
         .background { TreManaWindowTint() }
+        .background {
+            TreManaWindowSizing(isConnected: model.isConnected)
+                .frame(width: 0, height: 0)
+        }
         .task(id: refreshLoopIdentity) {
             // SwiftUI cancels the task when connection, phase or settings change.
             // First sleep avoids redundant fetch after Connect or torrent mutations.
@@ -257,21 +233,21 @@ private struct TorrentCommandBar: View {
     var body: some View {
         HStack(spacing: 12) {
             if showSidebar {
-                ToolbarActionButton(
-                    title: "Show Sidebar", symbol: "sidebar.left",
-                    presentation: selectedPresentation, action: revealSidebar
-                )
+                Button(action: revealSidebar) {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 24, height: 27)
+                }
+                .buttonStyle(.borderless)
+                .help("Show Sidebar")
+                .accessibilityLabel("Show Sidebar")
+                .accessibilityIdentifier("toolbar.reveal-sidebar")
             }
 
-            Button {
-                model.disconnect()
-            } label: {
-                Label("Disconnect", systemImage: "network.slash")
-                    .lineLimit(1)
-            }
-            .buttonStyle(.borderless)
-            .fixedSize(horizontal: true, vertical: false)
-            .help("Disconnect")
+            ToolbarActionButton(
+                title: "Disconnect", symbol: "network.slash",
+                presentation: selectedPresentation, action: model.disconnect
+            )
             .accessibilityIdentifier("toolbar.disconnect")
 
             Text(connectionName)
@@ -361,36 +337,30 @@ private struct ConnectionView: View {
 
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 16) {
                     ConnectionHero()
-                    HStack {
-                        Button {
-                            Task { await model.connect() }
-                        } label: {
-                            HStack(spacing: 8) {
-                                if model.isBusy {
-                                    ProgressView().controlSize(.small)
-                                } else {
-                                    Image(systemName: "network")
-                                }
-                                Text("Connect")
-                            }
+                    Button {
+                        Task { await model.connect() }
+                    } label: {
+                        if model.isBusy {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Connect", systemImage: "network")
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(
-                            model.isConnected || model.isBusy || model.profilesBusy
-                                || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        )
-                        .help("Connect")
-                        .accessibilityIdentifier("connection.primary-connect")
-                        Spacer()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(
+                        model.isConnected || model.isBusy || model.profilesBusy
+                            || model.rpcURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    .help("Connect")
+                    .accessibilityIdentifier("connection.primary-connect")
                 }
-                .padding(14)
+                .padding(11)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
             }
             Section("Saved Profiles") {
                 Picker("Profile", selection: $form.selectedProfileID) {
@@ -463,7 +433,10 @@ private struct TorrentTableView: View {
     @Environment(TreManaModel.self) private var model
     let filter: TorrentFilter
     let searchText: String
-    @State private var inspectorTab: InspectorTab = .files
+    @AppStorage("com.sl.tremana.inspector-tab.v1") private var inspectorTabName = InspectorTab.files.rawValue
+    @AppStorage(InspectorSplitSizing.storageKey) private var inspectorFraction = InspectorSplitSizing.defaultFraction
+    @State private var splitDragStart: Double?
+    @State private var splitDragPreview: Double?
     @State private var pendingVerifyIDs: [Int] = []
     @State private var pendingRemoveIDs: [Int] = []
     @State private var showingVerifyDialog = false
@@ -475,6 +448,29 @@ private struct TorrentTableView: View {
     @State private var showingPiecesLimitation = false
     @SceneStorage("com.sl.tremana.table-columns.v2")
     private var columnCustomization: TableColumnCustomization<TransmissionTorrent>
+
+    private var selectedInspectorTab: Binding<InspectorTab> {
+        Binding(
+            get: { InspectorTab(rawValue: inspectorTabName) ?? .files },
+            set: { inspectorTabName = $0.rawValue }
+        )
+    }
+
+    private func adjustInspector(_ drag: DragGesture.Value, totalHeight: Double) {
+        let start = splitDragStart ?? inspectorFraction
+        if splitDragStart == nil { splitDragStart = start }
+        let available = max(1, totalHeight - InspectorSplitSizing.dividerHeight)
+        let proposed = start * available - Double(drag.translation.height)
+        splitDragPreview = InspectorSplitSizing.fraction(
+            forInspectorHeight: proposed, totalHeight: totalHeight
+        )
+    }
+
+    private func finishInspectorDrag() {
+        if let splitDragPreview { inspectorFraction = splitDragPreview }
+        splitDragStart = nil
+        splitDragPreview = nil
+    }
 
     private var filteredTorrents: [TransmissionTorrent] {
         let filtered: [TransmissionTorrent]
@@ -513,7 +509,13 @@ private struct TorrentTableView: View {
         @Bindable var observedModel = model
 
         VStack(spacing: 0) {
-            VSplitView {
+            GeometryReader { geometry in
+                let availableHeight = Double(geometry.size.height)
+                let sizing = InspectorSplitSizing(
+                    totalHeight: availableHeight,
+                    preferredFraction: splitDragPreview ?? inspectorFraction
+                )
+                VStack(spacing: 0) {
                 Table(
                         filteredTorrents,
                         selection: $observedModel.selectedTorrentIDs,
@@ -637,14 +639,37 @@ private struct TorrentTableView: View {
                     }
                 .accessibilityLabel("Transmission torrents")
                 .alternatingRowBackgrounds(.disabled)
-                .frame(minHeight: 120, idealHeight: 170)
+                .frame(height: sizing.torrentsHeight)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                 .clipShape(RoundedRectangle(cornerRadius: 16))
 
-                TorrentInspectorView(selectedTab: $inspectorTab)
-                    .frame(minHeight: 280, idealHeight: 560)
+                Capsule()
+                    .fill(.secondary.opacity(0.5))
+                    .frame(width: 38, height: 3)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: InspectorSplitSizing.dividerHeight)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { adjustInspector($0, totalHeight: availableHeight) }
+                            .onEnded { _ in finishInspectorDrag() }
+                    )
+                    .help("Resize torrent details")
+                    .accessibilityLabel("Resize torrent details")
+                    .accessibilityAdjustableAction { direction in
+                        let delta = direction == .increment ? 0.05 : -0.05
+                        inspectorFraction = InspectorSplitSizing.fraction(
+                            forInspectorHeight: (inspectorFraction + delta)
+                                * max(1, availableHeight - InspectorSplitSizing.dividerHeight),
+                            totalHeight: availableHeight
+                        )
+                    }
+
+                TorrentInspectorView(selectedTab: selectedInspectorTab)
+                    .frame(height: sizing.inspectorHeight)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 9)
