@@ -44,6 +44,8 @@ jobs:
         run: swift package dump-package > /dev/null
       - name: Verify translation dictionaries
         run: python3 scripts/validate-localizations.py
+      - name: Guard explicit SwiftUI model injection
+        run: python3 scripts/validate-swiftui-model-injection.py
       - name: Unit tests
         run: swift test --parallel
       - name: Build release application

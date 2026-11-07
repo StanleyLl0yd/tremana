@@ -77,6 +77,7 @@ jobs:
           set -euo pipefail
           swift package dump-package >/dev/null
           python3 scripts/validate-localizations.py
+          python3 scripts/validate-swiftui-model-injection.py
           swift test --parallel
 
       - name: Import pinned TreMana signing identity
