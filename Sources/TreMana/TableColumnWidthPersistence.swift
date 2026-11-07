@@ -65,7 +65,7 @@ final class TableColumnWidthProbeView: NSView {
     private var restoredColumnInstances: [String: ObjectIdentifier] = [:]
     private var attachScheduled = false
     private var isRestoring = false
-    private var localEventMonitor: Any?
+    nonisolated(unsafe) private var localEventMonitor: Any?
 
     private var storageKey: String {
         "com.sl.tremana.table-column-widths.v1.\(tableIdentifier)"
@@ -130,7 +130,7 @@ final class TableColumnWidthProbeView: NSView {
 
     private func installObservers() {
         // SwiftUI can insert its native NSTableView after the representable's
-        // first layout pass. Retry when the containing window gains subviews.
+        // first layout pass. Retry on subsequent window updates until it is found.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(windowDidUpdate(_:)),
