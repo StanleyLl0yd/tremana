@@ -1,16 +1,18 @@
-name: TreMana numeric test release
+name: TreMana numeric release
 
 on:
   push:
     branches:
       - 'release/v*'
+    paths-ignore:
+      - '.github/workflows/**'
 
 permissions:
   contents: write
 
 concurrency:
   group: tremana-preview-${{ github.ref_name }}
-  # A newer push to a numeric test-release branch supersedes unfinished builds.
+  # A newer push to a numeric release branch supersedes unfinished builds.
   cancel-in-progress: true
 
 jobs:
@@ -127,14 +129,14 @@ jobs:
             exit 1
           }
 
-      - name: Publish immutable test prerelease at exact checked SHA
+      - name: Publish immutable release at exact checked SHA
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            echo "Existing prerelease must never be overwritten" >&2
+            echo "Existing release must never be overwritten" >&2
             exit 1
           fi
           tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" \
@@ -148,24 +150,24 @@ jobs:
               -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" > /dev/null
           fi
           gh release create "$RELEASE_TAG" "$ASSET_PATH" "$CHECKSUM_PATH" \
-            --verify-tag --prerelease --target "$GITHUB_SHA" \
-            --title "TreMana $RELEASE_VERSION (test build)" \
+            --verify-tag --latest --target "$GITHUB_SHA" \
+            --title "TreMana $RELEASE_VERSION" \
             --notes-file "docs/releases/$RELEASE_TAG.md"
 
-      - name: Verify uploaded archive and prerelease metadata
+      - name: Verify uploaded archive and full release metadata
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName,assets \
-            --jq 'if (.isDraft == false and .isPrerelease == true and (.assets | length) == 2) then "PREVIEW VERIFIED" else error("Invalid release metadata") end'
+            --jq 'if (.isDraft == false and .isPrerelease == false and (.assets | length) == 2) then "RELEASE VERIFIED" else error("Invalid release metadata") end'
           mkdir -p "$RUNNER_TEMP/tremana-preview-verify"
           gh release download "$RELEASE_TAG" \
             --pattern "$(basename "$ASSET_PATH")" \
             --dir "$RUNNER_TEMP/tremana-preview-verify"
           cmp "$ASSET_PATH" "$RUNNER_TEMP/tremana-preview-verify/$(basename "$ASSET_PATH")"
-          printf 'Direct test ZIP: https://github.com/%s/releases/download/%s/%s\n' \
+          printf 'Direct ZIP: https://github.com/%s/releases/download/%s/%s\n' \
             "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$(basename "$ASSET_PATH")" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Destroy ephemeral signing identity
