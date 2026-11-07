@@ -4,9 +4,10 @@ import Testing
 
 @Suite("Torrent priority summary")
 struct TorrentPrioritySummaryTests {
-    private func decode(_ values: [Int]) throws -> [TransmissionTorrentFileStat] {
+    private func decode(_ values: [Int], wanted: [Bool]? = nil) throws -> [TransmissionTorrentFileStat] {
         let dicts: [[String: Any]] = values.enumerated().map { index, priority in
-            ["wanted": index != 2, "priority": priority, "bytesCompleted": 0]
+            ["wanted": wanted?[index] ?? (index != 2),
+             "priority": priority, "bytesCompleted": 0]
         }
         return try JSONDecoder().decode(
             [TransmissionTorrentFileStat].self,
@@ -14,13 +15,15 @@ struct TorrentPrioritySummaryTests {
         )
     }
 
-    @Test func summaryRepresentsActualFilePriorities() throws {
+    @Test func summaryRepresentsEffectiveDownloadState() throws {
         #expect(TorrentFilePrioritySummary(fileStats: try decode([-1, -1])) == .low)
         #expect(TorrentFilePrioritySummary(fileStats: try decode([0, 0])) == .normal)
         #expect(TorrentFilePrioritySummary(fileStats: try decode([1, 1])) == .high)
+        #expect(TorrentFilePrioritySummary(fileStats: try decode([0, 0], wanted: [false, false])) == .skipped)
+        #expect(TorrentFilePrioritySummary(fileStats: try decode([0, 0], wanted: [true, false])) == .mixed)
         #expect(TorrentFilePrioritySummary(fileStats: try decode([1, 0, -1])) == .mixed)
-        // A skipped file still has a server-side priority: do not hide it.
-        #expect(TorrentFilePrioritySummary(fileStats: try decode([1, 1, 0])) == .mixed)
+        // Skipping a file changes its effective status, not its stored RPC priority.
+        #expect(TorrentFilePrioritySummary(priorities: [1, 1, 0]) == .mixed)
     }
 
     @Test func missingOrInvalidMetadataNeverDefaultsToNormal() throws {

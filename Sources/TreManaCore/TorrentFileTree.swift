@@ -151,6 +151,7 @@ public enum TorrentFileTreeBuilder {
         let files = directory.files.map { makeFile($0, depth: depth + 1, rootID: rootID) }
         let children = folders + files
         let indices = children.flatMap(\.fileIndices).sorted()
+        let wantedSummary = aggregateWanted(children)
 
         return TorrentFileTreeNode(
             id: id,
@@ -163,9 +164,9 @@ public enum TorrentFileTreeBuilder {
             fileIndices: indices,
             length: saturatedSum(children.map(\.length)),
             bytesCompleted: saturatedSum(children.map(\.bytesCompleted)),
-            wantedSummary: aggregateWanted(children),
+            wantedSummary: wantedSummary,
             wantedFileCount: children.reduce(0) { $0 + $1.wantedFileCount },
-            prioritySummary: aggregatePriority(children)
+            prioritySummary: aggregatePriority(children, wantedSummary: wantedSummary)
         )
     }
 
@@ -197,9 +198,11 @@ public enum TorrentFileTreeBuilder {
             bytesCompleted: completed,
             wantedSummary: wantedSummary,
             wantedFileCount: wantedCount,
-            prioritySummary: TorrentFilePrioritySummary(
-                priorities: [leaf.entry.priority]
-            )
+            prioritySummary: leaf.entry.wanted.map { wanted in
+                wanted
+                    ? TorrentFilePrioritySummary(priorities: [leaf.entry.priority])
+                    : .skipped
+            } ?? .unknown
         )
     }
 
@@ -216,8 +219,15 @@ public enum TorrentFileTreeBuilder {
     }
 
     private static func aggregatePriority(
-        _ nodes: [TorrentFileTreeNode]
+        _ nodes: [TorrentFileTreeNode],
+        wantedSummary: TorrentFileWantedSummary
     ) -> TorrentFilePrioritySummary {
+        switch wantedSummary {
+        case .unwanted: return .skipped
+        case .mixed: return .mixed
+        case .unknown: return .unknown
+        case .wanted: break
+        }
         guard !nodes.isEmpty,
               !nodes.contains(where: { $0.prioritySummary == .unknown }),
               let first = nodes.first?.prioritySummary else {

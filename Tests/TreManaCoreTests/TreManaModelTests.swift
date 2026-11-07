@@ -627,6 +627,34 @@ struct TreManaModelTests {
         #expect(!model.isBusy)
     }
 
+    @Test @MainActor func fileSelectionVerificationKeepsInspectorSnapshotVisible() async {
+        let remote = ControlledRPC(
+            hold: .postMutationDetail, torrents: [fixtureTorrent(1)],
+            wantedStates: [true, true]
+        )
+        let model = TreManaModel(makeClient: { _ in remote })
+        model.rpcURL = "https://router.example/transmission/rpc"
+        await model.connect()
+        model.selectedTorrentIDs = [1]
+        await model.loadSelectedTorrentDetails()
+
+        let mutation = Task {
+            await model.setFileWanted(
+                torrentID: 1, fileIndex: 1, wanted: false, expectedWanted: true
+            )
+        }
+        await remote.waitForHeldCall()
+        #expect(model.selectedTorrentDetail?.id == 1)
+        #expect(model.selectedTorrentDetail?.fileStats?[1].wanted == true)
+        #expect(model.detailErrorMessage == nil)
+
+        await remote.resumeHeldCall()
+        await mutation.value
+        #expect(model.selectedTorrentDetail?.fileStats?[1].wanted == false)
+        #expect(model.detailErrorMessage == nil)
+        #expect(model.noticeMessage == "File selection updated")
+    }
+
     @Test @MainActor func failedFileRPCDoesNotOptimisticallyChangeCheckbox() async {
         let remote = ControlledRPC(
             hold: .none, torrents: [fixtureTorrent(1)],
@@ -805,6 +833,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         case refresh
         case action
         case fileAction
+        case postMutationDetail
         case remoteMove
         case detail
     }
@@ -816,6 +845,8 @@ private actor ControlledRPC: TransmissionRPCProviding {
     private var changedPriorities: [(torrentID: Int, fileIndex: Int, priority: Int)] = []
     private var fileNamePrefix = "file_"
     private var fileNameOverrides: [Int: String] = [:]
+    private var fileMutationCompleted = false
+    private var postMutationDetailWasHeld = false
     private var remoteDownloadDir = "/mnt/downloads"
     private var moves: [(torrentID: Int, destination: String)] = []
     private var renames: [(torrentID: Int, path: String, name: String)] = []
@@ -864,6 +895,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         }
         states[fileIndex] = wanted
         wantedStates = states
+        fileMutationCompleted = true
     }
 
     func setFilePriority(torrentID: Int, fileIndex: Int, priority: Int) async throws {
@@ -876,6 +908,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
         }
         states[fileIndex] = priority
         priorityStates = states
+        fileMutationCompleted = true
     }
 
     func setFilesPriority(
@@ -892,6 +925,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
             changedPriorities.append((torrentID, index, priority))
         }
         priorityStates = states
+        fileMutationCompleted = true
     }
 
     func setQueueFileSelection(
@@ -913,6 +947,7 @@ private actor ControlledRPC: TransmissionRPCProviding {
             states[index] = false
         }
         wantedStates = states
+        fileMutationCompleted = true
     }
 
     func filePriorityCalls() -> [(torrentID: Int, fileIndex: Int, priority: Int)] {
@@ -975,6 +1010,14 @@ private actor ControlledRPC: TransmissionRPCProviding {
     }
 
     func torrentDetails(id: Int) async throws -> TransmissionTorrentDetail? {
+        if hold == .postMutationDetail && fileMutationCompleted && !postMutationDetailWasHeld {
+            postMutationDetailWasHeld = true
+            return await withCheckedContinuation { continuation in
+                detailContinuation = continuation
+                startedContinuation?.resume()
+                startedContinuation = nil
+            }
+        }
         if failPostMoveDetail && !moves.isEmpty {
             throw TransmissionRPCError.unexpectedStatus(503)
         }

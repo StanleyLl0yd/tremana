@@ -485,7 +485,7 @@ public final class TreManaModel {
                   selectedTorrentIDs == Set([torrentID]) else { return }
 
             // RPC success alone is not enough to claim the UI has changed.
-            selectedTorrentDetail = nil
+            // Keep the current inspector snapshot visible during verification.
             let refreshed = try await client.torrentDetails(id: torrentID)
             guard connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]) else { return }
@@ -576,7 +576,7 @@ public final class TreManaModel {
             guard connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]) else { return }
 
-            selectedTorrentDetail = nil
+            // Keep the current inspector snapshot visible during verification.
             let refreshed = try await client.torrentDetails(id: torrentID)
             guard connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]) else { return }
@@ -686,8 +686,7 @@ public final class TreManaModel {
             }
             guard connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]) else { return }
-            selectedTorrentDetail = nil
-
+            // Do not blank the inspector while the server confirms this batch.
             guard let verified = try await client.torrentDetails(id: torrentID),
                   connectionGeneration == ticket,
                   selectedTorrentIDs == Set([torrentID]),

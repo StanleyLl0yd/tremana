@@ -1,17 +1,31 @@
 import Foundation
 
-/// Read-only roll-up of the actual Transmission 3.00 per-file priorities.
-/// Transmission RPC 16 cannot set one independent "torrent priority"; it
-/// only accepts file indices, so this value must never act as a torrent edit control.
+/// Effective download status derived from Transmission's per-file wanted flags
+/// and priorities. A skipped file keeps its underlying RPC priority so it can
+/// be restored unchanged when it is included in the download again.
 public enum TorrentFilePrioritySummary: String, Sendable, Equatable {
     case unknown
+    case skipped
     case low
     case normal
     case high
     case mixed
 
     public init(fileStats: [TransmissionTorrentFileStat]?) {
-        self.init(priorities: fileStats?.map { Optional($0.priority) } ?? [])
+        guard let fileStats, !fileStats.isEmpty,
+              fileStats.allSatisfy({ (-1...1).contains($0.priority) }) else {
+            self = .unknown
+            return
+        }
+        if fileStats.allSatisfy({ !$0.wanted }) {
+            self = .skipped
+            return
+        }
+        if fileStats.contains(where: { !$0.wanted }) {
+            self = .mixed
+            return
+        }
+        self.init(priorities: fileStats.map { Optional($0.priority) })
     }
 
     public init(priorities: [Int?]) {

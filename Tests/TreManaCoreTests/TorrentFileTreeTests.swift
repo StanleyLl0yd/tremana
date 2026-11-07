@@ -85,7 +85,31 @@ struct TorrentFileTreeTests {
         #expect(media.bytesCompleted == 250)
         #expect(media.wantedFileCount == 2)
         #expect(media.wantedSummary == .mixed)
-        #expect(media.prioritySummary == .high)
+        #expect(media.prioritySummary == .mixed)
+    }
+
+    @Test func skippedFilesAndFoldersReportSkipWithoutLosingStoredPriority() throws {
+        let root = TorrentFileTreeBuilder.build(
+            rootName: "Skipped collection",
+            entries: [
+                entry(0, "Folder/one.bin", 100, 100, wanted: false, priority: 1),
+                entry(1, "Folder/two.bin", 200, 200, wanted: false, priority: -1)
+            ]
+        )
+        let folder = try #require(root.children?.first)
+        #expect(folder.wantedSummary == .unwanted)
+        #expect(folder.prioritySummary == .skipped)
+        #expect(root.prioritySummary == .skipped)
+        #expect(folder.children?.map(\.prioritySummary) == [.skipped, .skipped])
+
+        let mixed = TorrentFileTreeBuilder.build(
+            rootName: "Mixed collection",
+            entries: [
+                entry(0, "Folder/one.bin", 100, 100, wanted: true, priority: 0),
+                entry(1, "Folder/two.bin", 200, 200, wanted: false, priority: 0)
+            ]
+        )
+        #expect(mixed.children?.first?.prioritySummary == .mixed)
     }
 
     @Test func unknownStatsStayUnknownWithoutLosingProgressOrSize() throws {

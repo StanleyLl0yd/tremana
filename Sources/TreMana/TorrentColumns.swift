@@ -103,6 +103,7 @@ struct TorrentColumnCell: View {
     private var torrentPriorityLabel: String {
         switch torrent.filePrioritySummary {
         case .unknown: "—"
+        case .skipped: "Skipped"
         case .low: "Low"
         case .normal: "Normal"
         case .high: "High"
