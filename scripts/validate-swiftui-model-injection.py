@@ -23,13 +23,11 @@ for path in source_files:
 assert not disallowed, "UI must explicitly receive TreManaModel: " + ", ".join(disallowed)
 
 model = (root / "Sources" / "TreManaCore" / "TreManaModel.swift").read_text(encoding="utf-8")
-for method, next_method in [
-    ("setFileWanted", "setFilePriority"),
-    ("setFilePriority", "applyFileBatch"),
-    ("applyFileBatch", "setStrictFileQueue"),
-]:
-    start = model.index("public func " + method + "(")
-    end = model.index("public func " + next_method + "(", start + 1)
+model_class = model.index("public final class TreManaModel")
+for method in ["setFileWanted", "setFilePriority", "applyFileBatch"]:
+    start = model.index("public func " + method + "(", model_class)
+    end = model.find("\\n    public func ", start + 1)
+    assert end >= 0, "Unable to locate end of " + method
     assert "selectedTorrentDetail = nil" not in model[start:end], (
         method + " must keep the existing inspector snapshot mounted during RPC verification"
     )
