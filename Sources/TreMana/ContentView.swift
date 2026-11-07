@@ -752,10 +752,21 @@ private struct TorrentTableView: View {
                         .disabled(selection.isEmpty || model.isBusy)
                     }
                 .accessibilityLabel("Transmission torrents")
+                .accessibilityIdentifier("torrents.table")
                 .alternatingRowBackgrounds(.disabled)
                 .frame(height: sizing.torrentsHeight)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                 .clipShape(RoundedRectangle(cornerRadius: 16))
+                .background(alignment: .topLeading) {
+                    TableColumnWidthPersistence(
+                        tableIdentifier: "torrents",
+                        columnIdentifiers: Set(TorrentColumn.allCases.map(\.rawValue)),
+                        titleIdentifiers: TableColumnWidthPersistence.torrentTitleIdentifiers
+                    )
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
 
                 Capsule()
                     .fill(.secondary.opacity(0.5))

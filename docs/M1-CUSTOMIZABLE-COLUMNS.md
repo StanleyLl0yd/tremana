@@ -3,7 +3,9 @@
 The main torrent list uses native SwiftUI TableColumnCustomization and
 TableColumnForEach (macOS 27). Right-click a column header to show or
 hide columns. Drag headers to reorder. The per-window layout persists
-with SceneStorage.
+with SceneStorage. User-resized widths are stored separately for the torrent list
+and file inspector, keyed by stable column identifiers; they survive app restarts
+without replacing the existing visibility/order customization state.
 
 Visible by default: Name, Progress, Status, Download, Upload, Seeds,
 Leeches, ETA, Ratio. Optional: Added, Total Size, Downloaded, Uploaded,

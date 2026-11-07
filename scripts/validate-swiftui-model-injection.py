@@ -64,5 +64,29 @@ assert "checkmark.square.fill" not in inspector, "Folder selection must use the 
 assert '"folder.wanted.\\(node.id)"' in inspector
 assert '"file.wanted.\\(row.id)"' in inspector
 
+for cell in [
+    "FileWantedCell", "FilePriorityCell",
+    "FileTreeWantedCell", "FileTreePriorityCell",
+]:
+    assert f"private struct {cell}: View, Equatable" in inspector, (
+        cell + " must compare only the values that affect its own cell"
+    )
+assert inspector.count(".equatable()") == 4, "All four file/folder cells must be diff-isolated"
+assert ".allowsHitTesting(!model.isBusy)" in inspector, (
+    "Block interaction during RPC without applying disabled styling to every cell"
+)
+assert "isEnabled: !model.isBusy" not in inspector
+assert ".disabled(model.isBusy)" not in inspector
+
+widths = (ui / "TableColumnWidthPersistence.swift").read_text(encoding="utf-8")
+assert "NSTableView.columnDidResizeNotification" in widths
+assert "UserDefaults.standard.set" in widths
+assert "TableColumnWidthPersistence(" in content
+assert "TableColumnWidthPersistence(" in inspector
+assert '.customizationID("files.name")' in inspector
+assert '.customizationID("files.priority")' in inspector
+
 print("SwiftUI model dependencies explicit: PASS")
 print("File mutations preserve the inspector snapshot: PASS")
+print("File/folder cell updates are isolated: PASS")
+print("Torrent and inspector column widths persist: PASS")
