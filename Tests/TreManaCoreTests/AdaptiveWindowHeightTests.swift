@@ -15,6 +15,15 @@ struct AdaptiveWindowHeightTests {
         #expect(after > before)
     }
 
+    @Test func intrinsicHeightChangeTriggersGrowthAndShrink() {
+        #expect(AdaptiveWindowHeight.shouldUpdate(previous: 500, measured: 615))
+        #expect(AdaptiveWindowHeight.shouldUpdate(previous: 615, measured: 485))
+        #expect(!AdaptiveWindowHeight.shouldUpdate(previous: 500, measured: 500.3))
+        #expect(!AdaptiveWindowHeight.shouldUpdate(previous: 500, measured: 0))
+        #expect(!AdaptiveWindowHeight.shouldUpdate(previous: 500, measured: .nan))
+        #expect(!AdaptiveWindowHeight.shouldUpdate(previous: 500, measured: .infinity))
+    }
+
     @Test func shortContentDoesNotCreatePointlessOversizedWindow() {
         #expect(AdaptiveWindowHeight.fitted(contentHeight: 240, visibleHeight: 900) == 320)
     }
