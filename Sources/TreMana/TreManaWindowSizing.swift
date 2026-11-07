@@ -38,6 +38,7 @@ struct TreManaSettingsWindowSizing: NSViewRepresentable {
     }
 }
 
+@MainActor
 private enum WindowSizing {
     private static let logger = Logger(subsystem: "com.sl.tremana", category: "window-sizing")
     static func visibleFrame(for window: NSWindow) -> NSRect {
@@ -103,22 +104,26 @@ final class WindowSizeObserver: NSView {
     private var appliedConnected: Bool?
     private var onScrollRequirementChange: ((Bool) -> Void)?
     private var lastScrollRequirement: Bool?
-    private var screenObserver: NSObjectProtocol?
+    private var observesScreenChanges = false
     private var updateScheduled = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-        screenObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in self?.scheduleUpdate() }
+        if !observesScreenChanges {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(screenGeometryDidChange(_:)),
+                name: NSApplication.didChangeScreenParametersNotification, object: nil
+            )
+            observesScreenChanges = true
+        }
         scheduleUpdate()
     }
 
-    deinit {
-        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+    @objc private func screenGeometryDidChange(_ notification: Notification) {
+        scheduleUpdate()
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     func configure(connected: Bool, contentHeight: CGFloat,
                    onScrollRequirementChange: @escaping (Bool) -> Void) {
@@ -205,22 +210,26 @@ final class SettingsSizeObserver: NSView {
     private var contentHeight: CGFloat = 520
     private var onScrollRequirementChange: ((Bool) -> Void)?
     private var lastScrollRequirement: Bool?
-    private var screenObserver: NSObjectProtocol?
+    private var observesScreenChanges = false
     private var updateScheduled = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-        screenObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in self?.scheduleUpdate() }
+        if !observesScreenChanges {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(screenGeometryDidChange(_:)),
+                name: NSApplication.didChangeScreenParametersNotification, object: nil
+            )
+            observesScreenChanges = true
+        }
         scheduleUpdate()
     }
 
-    deinit {
-        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+    @objc private func screenGeometryDidChange(_ notification: Notification) {
+        scheduleUpdate()
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     func configure(contentHeight: CGFloat,
                    onScrollRequirementChange: @escaping (Bool) -> Void) {
