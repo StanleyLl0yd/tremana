@@ -75,9 +75,6 @@ assert inspector.count(".equatable()") == 4, "All four file/folder cells must be
 assert ".allowsHitTesting(!model.isBusy)" in inspector, (
     "Block interaction during RPC without applying disabled styling to every cell"
 )
-assert "isEnabled: !model.isBusy" not in inspector
-assert ".disabled(model.isBusy)" not in inspector
-
 widths = (ui / "TableColumnWidthPersistence.swift").read_text(encoding="utf-8")
 assert "NSTableView.columnDidResizeNotification" in widths
 assert "UserDefaults.standard.set" in widths
@@ -95,6 +92,8 @@ for cell, next_cell in [
     assert "model.selectedTorrentDetail" not in inspector[start:end], (
         cell + " must consume its immutable row snapshot, not observe the whole torrent detail"
     )
+    assert "isEnabled: !model.isBusy" not in inspector[start:end]
+    assert ".disabled(model.isBusy)" not in inspector[start:end]
 
 print("SwiftUI model dependencies explicit: PASS")
 print("File mutations preserve the inspector snapshot: PASS")
