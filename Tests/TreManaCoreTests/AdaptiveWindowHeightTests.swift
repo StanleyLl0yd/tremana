@@ -43,6 +43,33 @@ struct AdaptiveWindowHeightTests {
         }
     }
 
+    @Test func compactConnectionCanShrinkBelowPriorHardMinimum() {
+        let short = AdaptiveWindowHeight.fitted(
+            contentHeight: 228, visibleHeight: 900,
+            minimum: 260, chromeHeight: 38, screenMargin: 26
+        )
+        let expanded = AdaptiveWindowHeight.fitted(
+            contentHeight: 540, visibleHeight: 900,
+            minimum: 260, chromeHeight: 38, screenMargin: 26
+        )
+        #expect(short == 260)
+        #expect(expanded == 540)
+        #expect(expanded > short)
+    }
+
+    @Test func compactSettingsAndScreenBounds() {
+        let normal = AdaptiveWindowHeight.fitted(
+            contentHeight: 410, visibleHeight: 820,
+            minimum: 300, chromeHeight: 38, screenMargin: 26
+        )
+        let smallScreen = AdaptiveWindowHeight.fitted(
+            contentHeight: 410, visibleHeight: 430,
+            minimum: 300, chromeHeight: 38, screenMargin: 26
+        )
+        #expect(normal == 410)
+        #expect(smallScreen == 366)
+    }
+
     @Test func malformedMetricsFallBackSafely() {
         for content in [Double.nan, -.infinity, .infinity, -5.0] {
             let value = AdaptiveWindowHeight.fitted(contentHeight: content, visibleHeight: 700)
