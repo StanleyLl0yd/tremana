@@ -226,3 +226,7 @@
 "High priority" = "Высокий приоритет";
 "Selected file actions" = "Действия с выделенными файлами";
 "Resize torrent details" = "Изменить высоту панели сведений о торренте";
+"Connection settings" = "Параметры подключения";
+"Edit connection" = "Изменить подключение";
+"Hide connection settings" = "Скрыть параметры подключения";
+"Adaptive refresh: 5 seconds during downloads, 15 when idle, 30 in the background." = "Адаптивное обновление: каждые 5 секунд при загрузке, 15 при простое, 30 в фоновом режиме.";
