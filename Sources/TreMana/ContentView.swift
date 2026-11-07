@@ -77,19 +77,6 @@ struct ContentView: View {
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
 
-                if let version = Bundle.main.object(
-                    forInfoDictionaryKey: "CFBundleShortVersionString"
-                ) as? String {
-                    HStack {
-                        Text(version)
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.tertiary)
-                            .accessibilityLabel("TreMana version \(version)")
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 10)
-                }
             }
             .background(.ultraThinMaterial)
             .navigationTitle("TreMana")
@@ -830,6 +817,16 @@ private struct TorrentTableView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 6)
+                if let version = Bundle.main.object(
+                    forInfoDictionaryKey: "CFBundleShortVersionString"
+                ) as? String {
+                    Text("TreMana \(version)")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .help("TreMana version \(version)")
+                        .accessibilityLabel("TreMana version \(version)")
+                    Divider().frame(height: 15)
+                }
                 if let server = model.server {
                     Text("Transmission \(server.version)")
                         .lineLimit(1)
