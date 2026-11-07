@@ -68,7 +68,7 @@ for cell in [
     "FileWantedCell", "FilePriorityCell",
     "FileTreeWantedCell", "FileTreePriorityCell",
 ]:
-    assert f"private struct {cell}: View, Equatable" in inspector, (
+    assert f"private struct {cell}: View, @MainActor Equatable" in inspector, (
         cell + " must compare only the values that affect its own cell"
     )
 assert inspector.count(".equatable()") == 4, "All four file/folder cells must be diff-isolated"
