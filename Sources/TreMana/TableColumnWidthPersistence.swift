@@ -175,7 +175,7 @@ final class TableColumnWidthProbeView: NSView {
     }
 
     private func isTarget(_ table: NSTableView) -> Bool {
-        let expectedViewID = "\\(tableIdentifier).table"
+        let expectedViewID = "\(tableIdentifier).table"
         if table.identifier.rawValue == expectedViewID ||
             table.accessibilityIdentifier() == expectedViewID {
             return true
