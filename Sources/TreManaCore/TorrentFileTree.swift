@@ -100,8 +100,11 @@ public enum TorrentFileTreeBuilder {
                 .split(separator: "/", omittingEmptySubsequences: true)
                 .map(String.init)
                 .filter { $0 != "." && $0 != ".." }
-            let safeComponents = components.isEmpty
-                ? ["File \(entry.index + 1)"] : components
+            var safeComponents = components
+            // Some Transmission-compatible servers include the torrent root
+            // in every file path. The tree already renders that root as row 1.
+            if safeComponents.first == root.name { safeComponents.removeFirst() }
+            if safeComponents.isEmpty { safeComponents = ["File \(entry.index + 1)"] }
             let fileName = safeComponents[safeComponents.count - 1]
 
             var parent = root

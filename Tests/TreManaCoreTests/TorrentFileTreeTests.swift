@@ -104,6 +104,23 @@ struct TorrentFileTreeTests {
         #expect(folder.prioritySummary == .unknown)
     }
 
+    @Test func stripsTorrentRootPrefixAlreadyRepresentedByRootRow() {
+        let root = TorrentFileTreeBuilder.build(
+            rootName: "Original Microsoft Office 2019 x86_x64 RU",
+            rootID: "torrent:99",
+            entries: [
+                entry(0, "Original Microsoft Office 2019 x86_x64 RU/Tabletka/MAS/setup.cmd",
+                      100, 100),
+                entry(1, "Original Microsoft Office 2019 x86_x64 RU/LICENSE",
+                      20, 20)
+            ]
+        )
+        #expect(root.children?.map(\.name) == ["Tabletka", "LICENSE"])
+        #expect(root.children?.first?.children?.first?.name == "MAS")
+        #expect(root.children?.first?.children?.first?.children?.first?.name == "setup.cmd")
+        #expect(root.fileIndices == [0, 1])
+    }
+
     @Test func emptyAndUnsafePathComponentsDoNotCreatePhantomDirectories() {
         let root = TorrentFileTreeBuilder.build(
             rootName: "Paths",
