@@ -21,7 +21,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var showingAddTorrent = false
     @State private var searchText = ""
-    @State private var connectionContentHeight: CGFloat = 500
+    @State private var connectionContentHeight: CGFloat = 300
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
 
     private var refreshConfiguration: RefreshConfiguration {
