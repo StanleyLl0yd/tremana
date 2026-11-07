@@ -778,7 +778,7 @@ private struct FileWantedControl: View {
     }
 }
 
-private struct FileTreeWantedCell: View, Equatable {
+private struct FileTreeWantedCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let node: TorrentFileTreeNode
@@ -834,7 +834,7 @@ private struct FileTreeWantedCell: View, Equatable {
     }
 }
 
-private struct FileTreePriorityCell: View, Equatable {
+private struct FileTreePriorityCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let node: TorrentFileTreeNode
@@ -909,7 +909,7 @@ private struct FileTableEntry: Identifiable {
     }
 }
 
-private struct FileWantedCell: View, Equatable {
+private struct FileWantedCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let row: FileTableEntry
@@ -962,7 +962,7 @@ private struct FileWantedCell: View, Equatable {
     }
 }
 
-private struct FilePriorityCell: View, Equatable {
+private struct FilePriorityCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let row: FileTableEntry
