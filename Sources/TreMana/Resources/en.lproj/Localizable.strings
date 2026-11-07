@@ -230,3 +230,10 @@
 "Edit connection" = "Edit connection";
 "Hide connection settings" = "Hide connection settings";
 "Adaptive refresh: 5 seconds during downloads, 15 when idle, 30 in the background." = "Adaptive refresh: 5 seconds during downloads, 15 when idle, 30 in the background.";
+"Expand all folders" = "Expand all folders";
+"Collapse all folders" = "Collapse all folders";
+"Expand folder" = "Expand folder";
+"Collapse folder" = "Collapse folder";
+"Download folder contents" = "Download folder contents";
+"Skip folder contents" = "Skip folder contents";
+"Partially selected" = "Partially selected";

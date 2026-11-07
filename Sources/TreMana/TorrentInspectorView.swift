@@ -14,7 +14,9 @@ enum InspectorTab: String, CaseIterable, Identifiable {
 struct TorrentInspectorView: View {
     let model: TreManaModel
     @Binding var selectedTab: InspectorTab
-    @State private var selectedFileIndices: Set<Int> = []
+    @State private var selectedFileNodeIDs: Set<String> = []
+    @State private var expandedFileFolderIDs: Set<String> = []
+    @State private var expandedTreeTorrentID: Int?
     @State private var peerSortOrder: [KeyPathComparator<InspectorPeerRow>] = [
         KeyPathComparator(\.downRate, order: .reverse)
     ]
@@ -101,7 +103,11 @@ struct TorrentInspectorView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onChange(of: selectedID) { _, _ in selectedFileIndices.removeAll() }
+        .onChange(of: selectedID) { _, _ in
+            selectedFileNodeIDs.removeAll()
+            expandedFileFolderIDs.removeAll()
+            expandedTreeTorrentID = nil
+        }
         .task(id: selectedID) {
             await model.loadSelectedTorrentDetails()
             guard let id = selectedID else { return }
@@ -197,22 +203,62 @@ struct TorrentInspectorView: View {
         let hasStats = stats?.count == entries.count
         let wantedCount = stats?.filter(\.wanted).count ?? 0
         let queueLocked = model.strictQueueTorrentIDs.contains(detail.id)
-        let rows = entries.indices.map { FileTableEntry(
+        let fileRows = entries.indices.map { FileTableEntry(
             id: $0, file: entries[$0], stat: hasStats ? stats?[$0] : nil
         ) }
-        let selection = selectedFileIndices.filter { entries.indices.contains($0) }.sorted()
+        let fileRowsByIndex = Dictionary(uniqueKeysWithValues: fileRows.map { ($0.id, $0) })
+        let treeEntries = entries.indices.map { index in
+            TorrentFileTreeEntry(
+                index: index,
+                path: entries[index].name,
+                length: entries[index].length,
+                bytesCompleted: entries[index].bytesCompleted,
+                wanted: hasStats ? stats?[index].wanted : nil,
+                priority: hasStats ? stats?[index].priority : nil
+            )
+        }
+        let root = TorrentFileTreeBuilder.build(
+            rootName: detail.name,
+            rootID: "torrent:\(detail.id)",
+            entries: treeEntries
+        )
+        let allNodes = allFileTreeNodes(root)
+        let nodeByID = Dictionary(uniqueKeysWithValues: allNodes.map { ($0.id, $0) })
+        let visibleRows = visibleFileTreeRows(root)
+        let selectedIndices = Set(selectedFileNodeIDs
+            .compactMap { nodeByID[$0] }
+            .flatMap(\.fileIndices))
+        let selectedCount = selectedIndices.count
 
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Text("\(wantedCount) / \(entries.count)")
                     .monospacedDigit()
                 Text("Files selected")
-                if !selection.isEmpty {
+                if selectedCount > 0 {
                     Text("·")
                     Text("Selected")
-                    Text(selection.count, format: .number).monospacedDigit()
+                    Text(selectedCount, format: .number).monospacedDigit()
                 }
                 Spacer(minLength: 0)
+                Button {
+                    expandedFileFolderIDs = Set(allNodes
+                        .filter(\.isDirectory)
+                        .map(\.id))
+                } label: {
+                    Image(systemName: "chevron.down.square")
+                }
+                .buttonStyle(.plain)
+                .help("Expand all folders")
+                .accessibilityLabel("Expand all folders")
+                Button {
+                    expandedFileFolderIDs.removeAll()
+                } label: {
+                    Image(systemName: "chevron.up.square")
+                }
+                .buttonStyle(.plain)
+                .help("Collapse all folders")
+                .accessibilityLabel("Collapse all folders")
                 if model.strictQueuePendingIDs.contains(detail.id) {
                     Label("Ordered download pending", systemImage: "clock")
                 } else if queueLocked {
@@ -224,20 +270,17 @@ struct TorrentInspectorView: View {
             .padding(.horizontal, 15)
             .padding(.vertical, 7)
 
-            if rows.isEmpty {
+            if entries.isEmpty {
                 placeholder("No file metadata available", symbol: "doc")
             } else {
-                Table(rows, selection: $selectedFileIndices) {
+                Table(visibleRows, selection: $selectedFileNodeIDs) {
                     TableColumn("Name") { row in
-                        Label(row.file.name, systemImage: "doc")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(row.file.name)
+                        fileTreeNameCell(row)
                     }
-                    .width(min: 190, ideal: 400)
+                    .width(min: 220, ideal: 430)
 
                     TableColumn("Size") { row in
-                        Text(size(row.file.length))
+                        Text(size(row.node.length))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
@@ -245,8 +288,8 @@ struct TorrentInspectorView: View {
 
                     TableColumn("Progress") { row in
                         HStack(spacing: 7) {
-                            ProgressView(value: row.progress)
-                            Text(row.progress, format: .percent.precision(.fractionLength(1)))
+                            ProgressView(value: row.node.progress)
+                            Text(row.node.progress, format: .percent.precision(.fractionLength(1)))
                                 .font(.caption.monospacedDigit())
                                 .frame(width: 48, alignment: .trailing)
                         }
@@ -254,32 +297,165 @@ struct TorrentInspectorView: View {
                     .width(min: 100, ideal: 155)
 
                     TableColumn("Download file") { row in
-                        FileWantedCell(model: model, torrentID: detail.id, row: row,
-                                       wantedCount: wantedCount, queueLocked: queueLocked)
+                        if let fileIndex = row.node.fileIndex,
+                           let fileRow = fileRowsByIndex[fileIndex] {
+                            FileWantedCell(model: model,
+                                           torrentID: detail.id, row: fileRow,
+                                           wantedCount: wantedCount, queueLocked: queueLocked)
+                        } else {
+                            FileTreeWantedCell(
+                                model: model, torrentID: detail.id, node: row.node,
+                                wantedCount: wantedCount, queueLocked: queueLocked
+                            )
+                        }
                     }
                     .width(min: 72, ideal: 90)
 
                     TableColumn("Priority") { row in
-                        FilePriorityCell(model: model, torrentID: detail.id, row: row)
+                        if let fileIndex = row.node.fileIndex,
+                           let fileRow = fileRowsByIndex[fileIndex] {
+                            FilePriorityCell(model: model,
+                                             torrentID: detail.id, row: fileRow)
+                        } else {
+                            FileTreePriorityCell(
+                                model: model, torrentID: detail.id, node: row.node
+                            )
+                        }
                     }
                     .width(min: 100, ideal: 130)
                 }
-                .contextMenu(forSelectionType: Int.self) { clicked in
-                    let chosen = clicked.filter { entries.indices.contains($0) }.sorted()
+                .contextMenu(forSelectionType: String.self) { clicked in
+                    let chosen = Set(clicked
+                        .compactMap { nodeByID[$0] }
+                        .flatMap(\.fileIndices))
+                        .sorted()
                     if !chosen.isEmpty && hasStats {
                         FileBatchActions(
                             model: model,
                             torrentID: detail.id,
                             indices: chosen,
                             wantedCount: wantedCount,
-                            selectedWantedCount: chosen.filter { stats?[$0].wanted == true }.count,
+                            selectedWantedCount: chosen.filter {
+                                stats?[$0].wanted == true
+                            }.count,
                             queueLocked: queueLocked
                         )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("files.table")
+                .onAppear {
+                    if expandedTreeTorrentID != detail.id {
+                        expandedTreeTorrentID = detail.id
+                        selectedFileNodeIDs.removeAll()
+                        expandedFileFolderIDs = defaultExpandedFolderIDs(
+                            root, totalFileCount: entries.count
+                        )
+                    }
+                }
             }
+        }
+    }
+
+    private func allFileTreeNodes(
+        _ root: TorrentFileTreeNode
+    ) -> [TorrentFileTreeNode] {
+        var result: [TorrentFileTreeNode] = []
+        func visit(_ node: TorrentFileTreeNode) {
+            result.append(node)
+            for child in node.children ?? [] { visit(child) }
+        }
+        visit(root)
+        return result
+    }
+
+    private func visibleFileTreeRows(
+        _ root: TorrentFileTreeNode
+    ) -> [FileTreeTableRow] {
+        var result: [FileTreeTableRow] = []
+        func visit(_ node: TorrentFileTreeNode, depth: Int) {
+            result.append(FileTreeTableRow(node: node, depth: depth))
+            guard expandedFileFolderIDs.contains(node.id) else { return }
+            for child in node.children ?? [] { visit(child, depth: depth + 1) }
+        }
+        visit(root, depth: 0)
+        return result
+    }
+
+    private func defaultExpandedFolderIDs(
+        _ root: TorrentFileTreeNode,
+        totalFileCount: Int
+    ) -> Set<String> {
+        var result = Set<String>()
+        let expandAll = totalFileCount <= 60
+        func visit(_ node: TorrentFileTreeNode, depth: Int) {
+            guard node.isDirectory, !(node.children ?? []).isEmpty else { return }
+            if expandAll || depth < 2 {
+                result.insert(node.id)
+                for child in node.children ?? [] { visit(child, depth: depth + 1) }
+            }
+        }
+        visit(root, depth: 0)
+        return result
+    }
+
+    private func fileTreeNameCell(_ row: FileTreeTableRow) -> some View {
+        HStack(spacing: 6) {
+            if row.node.isDirectory {
+                Button {
+                    if expandedFileFolderIDs.contains(row.node.id) {
+                        expandedFileFolderIDs.remove(row.node.id)
+                    } else {
+                        expandedFileFolderIDs.insert(row.node.id)
+                    }
+                } label: {
+                    Image(systemName: expandedFileFolderIDs.contains(row.node.id)
+                        ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 13, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled((row.node.children ?? []).isEmpty)
+                .help(expandedFileFolderIDs.contains(row.node.id)
+                    ? "Collapse folder" : "Expand folder")
+            } else {
+                Color.clear.frame(width: 13, height: 20)
+            }
+
+            Image(systemName: fileTreeSymbol(for: row.node))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(row.node.isDirectory ? Color.accentColor : Color.secondary)
+                .frame(width: 17)
+
+            Text(row.node.name)
+                .font(row.depth == 0
+                    ? .body.weight(.semibold)
+                    : row.node.isDirectory ? .body.weight(.medium) : .body)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(row.node.relativePath.isEmpty
+                    ? row.node.name : row.node.relativePath)
+        }
+        .padding(.leading, CGFloat(row.depth) * 15)
+        .contentShape(Rectangle())
+    }
+
+    private func fileTreeSymbol(for node: TorrentFileTreeNode) -> String {
+        if node.isDirectory {
+            return node.depth == 0 ? "externaldrive.fill" : "folder.fill"
+        }
+        return switch URL(fileURLWithPath: node.name).pathExtension.lowercased() {
+        case "app", "pkg": "app"
+        case "zip", "7z", "rar", "tar", "gz", "dmg", "iso": "archivebox"
+        case "pdf": "doc.richtext"
+        case "md", "txt", "rtf", "html", "htm": "doc.text"
+        case "cmd", "bat", "sh", "ps1", "command": "terminal"
+        case "jpg", "jpeg", "png", "gif", "heic", "webp": "photo"
+        case "mp3", "m4a", "wav", "flac", "aac": "music.note"
+        case "mp4", "mov", "mkv", "avi": "film"
+        default: "doc"
         }
     }
 
@@ -480,6 +656,119 @@ struct TorrentInspectorView: View {
     }
 }
 
+
+private struct FileTreeTableRow: Identifiable {
+    let node: TorrentFileTreeNode
+    let depth: Int
+
+    var id: String { node.id }
+}
+
+private struct FileTreeWantedCell: View {
+    let model: TreManaModel
+    let torrentID: Int
+    let node: TorrentFileTreeNode
+    let wantedCount: Int
+    let queueLocked: Bool
+
+    private var shouldDownload: Bool {
+        node.wantedSummary != .wanted
+    }
+
+    private var symbol: String {
+        switch node.wantedSummary {
+        case .wanted: "checkmark.square.fill"
+        case .unwanted: "square"
+        case .mixed: "minus.square.fill"
+        case .unknown: "minus.square"
+        }
+    }
+
+    private var actionTitle: String {
+        shouldDownload ? "Download folder contents" : "Skip folder contents"
+    }
+
+    var body: some View {
+        Button {
+            guard !node.fileIndices.isEmpty else { return }
+            Task {
+                await model.applyFileBatch(
+                    torrentID: torrentID,
+                    indices: node.fileIndices,
+                    action: .download(shouldDownload)
+                )
+            }
+        } label: {
+            Image(systemName: symbol)
+                .foregroundStyle(node.wantedSummary == .unknown
+                    ? Color.secondary : Color.accentColor)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(
+            model.isBusy || queueLocked ||
+            node.wantedSummary == .unknown ||
+            node.fileIndices.isEmpty ||
+            (!shouldDownload && wantedCount <= node.wantedFileCount)
+        )
+        .help(LocalizedStringKey(
+            node.wantedSummary == .mixed ? "Partially selected" : actionTitle
+        ))
+        .accessibilityLabel(LocalizedStringKey(actionTitle))
+    }
+}
+
+private struct FileTreePriorityCell: View {
+    let model: TreManaModel
+    let torrentID: Int
+    let node: TorrentFileTreeNode
+
+    private var selection: Int {
+        switch node.prioritySummary {
+        case .low: -1
+        case .normal: 0
+        case .high: 1
+        case .mixed: 2
+        case .unknown: 3
+        }
+    }
+
+    var body: some View {
+        Group {
+            if node.prioritySummary == .unknown {
+                Text("—")
+                    .foregroundStyle(.tertiary)
+            } else {
+                Picker("Priority", selection: Binding(
+                    get: { selection },
+                    set: { value in
+                        guard (-1...1).contains(value) else { return }
+                        Task {
+                            await model.applyFileBatch(
+                                torrentID: torrentID,
+                                indices: node.fileIndices,
+                                action: .priority(value)
+                            )
+                        }
+                    }
+                )) {
+                    Text("Low").tag(-1)
+                    Text("Normal").tag(0)
+                    Text("High").tag(1)
+                    if node.prioritySummary == .mixed {
+                        Text("Mixed").tag(2)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .disabled(model.isBusy || node.fileIndices.isEmpty)
+                .accessibilityIdentifier("folder.priority.\(node.id)")
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
 
 private struct FileTableEntry: Identifiable {
     let id: Int
