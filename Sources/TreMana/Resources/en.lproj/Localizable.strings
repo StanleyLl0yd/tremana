@@ -226,3 +226,7 @@
 "High priority" = "High priority";
 "Selected file actions" = "Selected file actions";
 "Resize torrent details" = "Resize torrent details";
+"Connection settings" = "Connection settings";
+"Edit connection" = "Edit connection";
+"Hide connection settings" = "Hide connection settings";
+"Adaptive refresh: 5 seconds during downloads, 15 when idle, 30 in the background." = "Adaptive refresh: 5 seconds during downloads, 15 when idle, 30 in the background.";
