@@ -928,6 +928,7 @@ private struct FileWantedCell: View, Equatable {
         lhs.row.id == rhs.row.id &&
         lhs.hasStats == rhs.hasStats &&
         lhs.wanted == rhs.wanted &&
+        lhs.queueLocked == rhs.queueLocked &&
         lhs.canChangeSelection == rhs.canChangeSelection
     }
 

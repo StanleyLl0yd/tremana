@@ -175,8 +175,33 @@ final class TableColumnWidthProbeView: NSView {
     }
 
     private func isTarget(_ table: NSTableView) -> Bool {
-        let found = Set(table.tableColumns.compactMap(columnIdentifier))
-        return found.intersection(columnIdentifiers).count >= min(2, columnIdentifiers.count)
+        let expectedViewID = "\\(tableIdentifier).table"
+        if table.identifier.rawValue == expectedViewID ||
+            table.accessibilityIdentifier() == expectedViewID {
+            return true
+        }
+
+        let rawIdentifiers = Set(table.tableColumns.map { $0.identifier.rawValue })
+        if rawIdentifiers.intersection(columnIdentifiers).count >= min(2, columnIdentifiers.count) {
+            return true
+        }
+
+        // SwiftUI may keep its internal NSTableColumn identifiers opaque.
+        // Fall back to table-specific header signatures, never generic Name/Progress.
+        let titles = Set(table.tableColumns.map { $0.headerCell.stringValue })
+        switch tableIdentifier {
+        case "torrents":
+            return titles.contains("Status") || titles.contains("Состояние") ||
+                titles.contains("Upload") || titles.contains("Отдача")
+        case "files":
+            let hasSize = titles.contains("Size") || titles.contains("Размер")
+            let hasDownload = titles.contains("Download file") ||
+                titles.contains("Download") || titles.contains("Скачивать")
+            let hasPriority = titles.contains("Priority") || titles.contains("Приоритет")
+            return hasSize && hasDownload && hasPriority
+        default:
+            return false
+        }
     }
 
     private func columnIdentifier(_ column: NSTableColumn) -> String? {

@@ -86,6 +86,16 @@ assert "TableColumnWidthPersistence(" in inspector
 assert '.customizationID("files.name")' in inspector
 assert '.customizationID("files.priority")' in inspector
 
+for cell, next_cell in [
+    ("FileWantedCell", "FilePriorityCell"),
+    ("FilePriorityCell", "FileBatchActions"),
+]:
+    start = inspector.index("private struct " + cell)
+    end = inspector.index("private struct " + next_cell, start + 1)
+    assert "model.selectedTorrentDetail" not in inspector[start:end], (
+        cell + " must consume its immutable row snapshot, not observe the whole torrent detail"
+    )
+
 print("SwiftUI model dependencies explicit: PASS")
 print("File mutations preserve the inspector snapshot: PASS")
 print("File/folder cell updates are isolated: PASS")
