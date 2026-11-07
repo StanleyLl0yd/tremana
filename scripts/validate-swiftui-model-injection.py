@@ -64,5 +64,38 @@ assert "checkmark.square.fill" not in inspector, "Folder selection must use the 
 assert '"folder.wanted.\\(node.id)"' in inspector
 assert '"file.wanted.\\(row.id)"' in inspector
 
+for cell in [
+    "FileWantedCell", "FilePriorityCell",
+    "FileTreeWantedCell", "FileTreePriorityCell",
+]:
+    assert f"private struct {cell}: View, @MainActor Equatable" in inspector, (
+        cell + " must compare only the values that affect its own cell"
+    )
+assert inspector.count(".equatable()") == 4, "All four file/folder cells must be diff-isolated"
+assert ".allowsHitTesting(!model.isBusy)" in inspector, (
+    "Block interaction during RPC without applying disabled styling to every cell"
+)
+widths = (ui / "TableColumnWidthPersistence.swift").read_text(encoding="utf-8")
+assert "NSTableView.columnDidResizeNotification" in widths
+assert "UserDefaults.standard.set" in widths
+assert "TableColumnWidthPersistence(" in content
+assert "TableColumnWidthPersistence(" in inspector
+assert '.customizationID("files.name")' in inspector
+assert '.customizationID("files.priority")' in inspector
+
+for cell, next_cell in [
+    ("FileWantedCell", "FilePriorityCell"),
+    ("FilePriorityCell", "FileBatchActions"),
+]:
+    start = inspector.index("private struct " + cell)
+    end = inspector.index("private struct " + next_cell, start + 1)
+    assert "model.selectedTorrentDetail" not in inspector[start:end], (
+        cell + " must consume its immutable row snapshot, not observe the whole torrent detail"
+    )
+    assert "isEnabled: !model.isBusy" not in inspector[start:end]
+    assert ".disabled(model.isBusy)" not in inspector[start:end]
+
 print("SwiftUI model dependencies explicit: PASS")
 print("File mutations preserve the inspector snapshot: PASS")
+print("File/folder cell updates are isolated: PASS")
+print("Torrent and inspector column widths persist: PASS")

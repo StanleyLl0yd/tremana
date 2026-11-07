@@ -278,6 +278,7 @@ struct TorrentInspectorView: View {
                         fileTreeNameCell(row)
                     }
                     .width(min: 220, ideal: 430)
+                    .customizationID("files.name")
 
                     TableColumn("Size") { row in
                         Text(size(row.node.length))
@@ -285,6 +286,7 @@ struct TorrentInspectorView: View {
                             .monospacedDigit()
                     }
                     .width(min: 74, ideal: 94)
+                    .customizationID("files.size")
 
                     TableColumn("Progress") { row in
                         HStack(spacing: 7) {
@@ -295,6 +297,7 @@ struct TorrentInspectorView: View {
                         }
                     }
                     .width(min: 100, ideal: 155)
+                    .customizationID("files.progress")
 
                     TableColumn("Download file") { row in
                         if let fileIndex = row.node.fileIndex,
@@ -302,27 +305,33 @@ struct TorrentInspectorView: View {
                             FileWantedCell(model: model,
                                            torrentID: detail.id, row: fileRow,
                                            wantedCount: wantedCount, queueLocked: queueLocked)
+                                .equatable()
                         } else {
                             FileTreeWantedCell(
                                 model: model, torrentID: detail.id, node: row.node,
                                 wantedCount: wantedCount, queueLocked: queueLocked
                             )
+                            .equatable()
                         }
                     }
                     .width(min: 72, ideal: 90)
+                    .customizationID("files.download")
 
                     TableColumn("Priority") { row in
                         if let fileIndex = row.node.fileIndex,
                            let fileRow = fileRowsByIndex[fileIndex] {
                             FilePriorityCell(model: model,
                                              torrentID: detail.id, row: fileRow)
+                                .equatable()
                         } else {
                             FileTreePriorityCell(
                                 model: model, torrentID: detail.id, node: row.node
                             )
+                            .equatable()
                         }
                     }
                     .width(min: 100, ideal: 130)
+                    .customizationID("files.priority")
                 }
                 .contextMenu(forSelectionType: String.self) { clicked in
                     let chosen = Set(clicked
@@ -343,6 +352,21 @@ struct TorrentInspectorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Block interaction during an RPC without dimming every cell.
+                .allowsHitTesting(!model.isBusy)
+                .background(alignment: .topLeading) {
+                    TableColumnWidthPersistence(
+                        tableIdentifier: "files",
+                        columnIdentifiers: [
+                            "files.name", "files.size", "files.progress",
+                            "files.download", "files.priority"
+                        ],
+                        titleIdentifiers: TableColumnWidthPersistence.fileTitleIdentifiers
+                    )
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
                 .accessibilityIdentifier("files.table")
                 .onAppear {
                     if expandedTreeTorrentID != detail.id {
@@ -754,7 +778,7 @@ private struct FileWantedControl: View {
     }
 }
 
-private struct FileTreeWantedCell: View {
+private struct FileTreeWantedCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let node: TorrentFileTreeNode
@@ -770,10 +794,21 @@ private struct FileTreeWantedCell: View {
     }
 
     private var canChangeSelection: Bool {
-        !model.isBusy && !queueLocked &&
+        !queueLocked &&
             node.wantedSummary != .unknown &&
             !node.fileIndices.isEmpty &&
             (shouldDownload || wantedCount > node.wantedFileCount)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model &&
+        lhs.torrentID == rhs.torrentID &&
+        lhs.node.id == rhs.node.id &&
+        lhs.node.wantedSummary == rhs.node.wantedSummary &&
+        lhs.node.wantedFileCount == rhs.node.wantedFileCount &&
+        lhs.node.fileIndices == rhs.node.fileIndices &&
+        lhs.queueLocked == rhs.queueLocked &&
+        lhs.canChangeSelection == rhs.canChangeSelection
     }
 
     var body: some View {
@@ -799,7 +834,7 @@ private struct FileTreeWantedCell: View {
     }
 }
 
-private struct FileTreePriorityCell: View {
+private struct FileTreePriorityCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let node: TorrentFileTreeNode
@@ -813,6 +848,14 @@ private struct FileTreePriorityCell: View {
         case .skipped: 3
         case .unknown: 4
         }
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model &&
+        lhs.torrentID == rhs.torrentID &&
+        lhs.node.id == rhs.node.id &&
+        lhs.node.fileIndices == rhs.node.fileIndices &&
+        lhs.node.prioritySummary == rhs.node.prioritySummary
     }
 
     var body: some View {
@@ -847,7 +890,7 @@ private struct FileTreePriorityCell: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .disabled(model.isBusy || node.fileIndices.isEmpty)
+                .disabled(node.fileIndices.isEmpty)
                 .accessibilityIdentifier("folder.priority.\(node.id)")
             }
         }
@@ -866,19 +909,27 @@ private struct FileTableEntry: Identifiable {
     }
 }
 
-private struct FileWantedCell: View {
+private struct FileWantedCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let row: FileTableEntry
     let wantedCount: Int
     let queueLocked: Bool
 
-    private var wanted: Bool {
-        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
-              let stats = detail.fileStats, stats.indices.contains(row.id) else {
-            return row.stat?.wanted ?? false
-        }
-        return stats[row.id].wanted
+    private var wanted: Bool { row.stat?.wanted ?? false }
+    private var hasStats: Bool { row.stat != nil }
+    private var canChangeSelection: Bool {
+        hasStats && !queueLocked && (!wanted || wantedCount > 1)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model &&
+        lhs.torrentID == rhs.torrentID &&
+        lhs.row.id == rhs.row.id &&
+        lhs.hasStats == rhs.hasStats &&
+        lhs.wanted == rhs.wanted &&
+        lhs.queueLocked == rhs.queueLocked &&
+        lhs.canChangeSelection == rhs.canChangeSelection
     }
 
     var body: some View {
@@ -891,8 +942,7 @@ private struct FileWantedCell: View {
                         ? "Disable ordered downloading before changing file selection"
                         : "Download file",
                     identifier: "file.wanted.\(row.id)",
-                    isEnabled: !model.isBusy && !queueLocked &&
-                        (!wanted || wantedCount > 1)
+                    isEnabled: canChangeSelection
                 ) {
                     let previous = wanted
                     Task {
@@ -912,34 +962,31 @@ private struct FileWantedCell: View {
     }
 }
 
-private struct FilePriorityCell: View {
+private struct FilePriorityCell: View, @MainActor Equatable {
     let model: TreManaModel
     let torrentID: Int
     let row: FileTableEntry
 
-    private var priority: Int {
-        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
-              let stats = detail.fileStats, stats.indices.contains(row.id) else {
-            return row.stat?.priority ?? 0
-        }
-        return stats[row.id].priority
-    }
+    private var priority: Int { row.stat?.priority ?? 0 }
+    private var wanted: Bool { row.stat?.wanted ?? false }
+    private var hasStats: Bool { row.stat != nil }
 
-    private var wanted: Bool {
-        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
-              let stats = detail.fileStats, stats.indices.contains(row.id) else {
-            return row.stat?.wanted ?? false
-        }
-        return stats[row.id].wanted
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model &&
+        lhs.torrentID == rhs.torrentID &&
+        lhs.row.id == rhs.row.id &&
+        lhs.hasStats == rhs.hasStats &&
+        lhs.wanted == rhs.wanted &&
+        lhs.priority == rhs.priority
     }
 
     var body: some View {
         Group {
-            if row.stat != nil && !wanted {
+            if hasStats && !wanted {
                 Text("Skipped")
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("file.priority.skipped.\(row.id)")
-            } else if row.stat != nil {
+            } else if hasStats {
                 Picker("Priority", selection: Binding(
                     get: { priority },
                     set: { value in
@@ -958,7 +1005,6 @@ private struct FilePriorityCell: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .disabled(model.isBusy)
                 .accessibilityIdentifier("file.priority.\(row.id)")
             } else {
                 Text("—").foregroundStyle(.tertiary)
