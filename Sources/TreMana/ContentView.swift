@@ -109,22 +109,19 @@ struct ContentView: View {
         }
             } else {
                 NavigationStack {
-                    ConnectionView(model: model)
+                    ConnectionView(model: model, measuredHeight: $connectionContentHeight)
                 }
             }
         }
         .background { TreManaWindowTint() }
-        .background {
+        .overlay(alignment: .topLeading) {
             TreManaWindowSizing(
                 isConnected: model.isConnected,
                 disconnectedContentHeight: connectionContentHeight
             )
-                .frame(width: 0, height: 0)
-        }
-        .onPreferenceChange(MeasuredContentHeight.self) { height in
-            if height > 0 && abs(height - connectionContentHeight) > 1 {
-                connectionContentHeight = height
-            }
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .task(id: refreshLoopIdentity) {
             // SwiftUI cancels the task when connection, phase or settings change.
@@ -342,6 +339,7 @@ private struct ToolbarActionButton: View {
 
 private struct ConnectionView: View {
     let model: TreManaModel
+    @Binding var measuredHeight: CGFloat
 
     var body: some View {
         @Bindable var form = model
@@ -487,7 +485,15 @@ private struct ConnectionView: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
             .fixedSize(horizontal: false, vertical: true)
-            .reportNaturalHeight()
+            // Measure from within the ScrollView. Its PreferenceKeys may not
+            // propagate reliably past NavigationStack to the outer ContentView.
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                if AdaptiveWindowHeight.shouldUpdate(
+                    previous: Double(measuredHeight), measured: Double(height)
+                ) {
+                    measuredHeight = height
+                }
+            }
         }
         .scrollIndicators(.automatic)
         .background { TreManaWindowTint() }
