@@ -47,12 +47,16 @@ private enum WindowSizing {
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     }
 
-    static func fit(_ measuredHeight: CGFloat, window: NSWindow, minimum: Double)
+    static func fit(_ measuredHeight: CGFloat, window: NSWindow, minimum: Double,
+                    additionalHeight: CGFloat = 0)
         -> (height: CGFloat, needsScroll: Bool) {
+        // NavigationStack can reserve extra vertical space outside the inner
+        // form's geometry. Account for it in the window, not by shrinking UI.
+        let requiredHeight = measuredHeight + max(0, additionalHeight)
         let chrome = window.frame.height
             - window.contentRect(forFrameRect: window.frame).height
         let fitted = AdaptiveWindowHeight.fitted(
-            contentHeight: Double(measuredHeight),
+            contentHeight: Double(requiredHeight),
             visibleHeight: Double(visibleFrame(for: window).height),
             minimum: minimum,
             chromeHeight: Double(max(30, chrome)),
@@ -61,7 +65,7 @@ private enum WindowSizing {
         return (
             height: CGFloat(fitted),
             needsScroll: AdaptiveWindowHeight.needsScrolling(
-                contentHeight: Double(measuredHeight), fittedHeight: fitted
+                contentHeight: Double(requiredHeight), fittedHeight: fitted
             )
         )
     }
@@ -191,7 +195,10 @@ final class WindowSizeObserver: NSView {
 
         if !desiredConnected {
             let screen = WindowSizing.visibleFrame(for: window)
-            let fit = WindowSizing.fit(contentHeight, window: window, minimum: 260)
+            // Keep a small amount of vertical breathing room around the NavigationStack
+            // connection form, whose measured VStack excludes navigation layout.
+            let fit = WindowSizing.fit(contentHeight, window: window,
+                                       minimum: 260, additionalHeight: 20)
             let target = NSSize(
                 width: max(320, min(660, screen.width - 26)),
                 height: fit.height

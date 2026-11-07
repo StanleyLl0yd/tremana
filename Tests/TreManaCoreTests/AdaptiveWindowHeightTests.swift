@@ -87,6 +87,29 @@ struct AdaptiveWindowHeightTests {
         #expect(!AdaptiveWindowHeight.needsScrolling(contentHeight: .nan, fittedHeight: expanded))
     }
 
+    @Test func connectionNavigationAllowanceAddsRoomOrEnablesScrollAtScreenLimit() {
+        // Measured form height excludes a small amount of NavigationStack layout.
+        let measured = 710.0
+        let required = measured + 20.0
+        let normal = AdaptiveWindowHeight.fitted(
+            contentHeight: required, visibleHeight: 1000,
+            minimum: 260, chromeHeight: 38, screenMargin: 26
+        )
+        #expect(normal == 730)
+        #expect(!AdaptiveWindowHeight.needsScrolling(contentHeight: required, fittedHeight: normal))
+
+        // At a physical screen bound, the missing bottom is scrollable instead
+        // of being clipped or solved by reducing font/control dimensions.
+        let constrained = AdaptiveWindowHeight.fitted(
+            contentHeight: required, visibleHeight: 760,
+            minimum: 260, chromeHeight: 38, screenMargin: 26
+        )
+        #expect(constrained == 696)
+        #expect(AdaptiveWindowHeight.needsScrolling(
+            contentHeight: required, fittedHeight: constrained
+        ))
+    }
+
     @Test func malformedMetricsFallBackSafely() {
         for content in [Double.nan, -.infinity, .infinity, -5.0] {
             let value = AdaptiveWindowHeight.fitted(contentHeight: content, visibleHeight: 700)
