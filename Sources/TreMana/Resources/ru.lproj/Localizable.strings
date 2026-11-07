@@ -230,3 +230,10 @@
 "Edit connection" = "Изменить подключение";
 "Hide connection settings" = "Скрыть параметры подключения";
 "Adaptive refresh: 5 seconds during downloads, 15 when idle, 30 in the background." = "Адаптивное обновление: каждые 5 секунд при загрузке, 15 при простое, 30 в фоновом режиме.";
+"Expand all folders" = "Развернуть все папки";
+"Collapse all folders" = "Свернуть все папки";
+"Expand folder" = "Развернуть папку";
+"Collapse folder" = "Свернуть папку";
+"Download folder contents" = "Скачивать содержимое папки";
+"Skip folder contents" = "Не скачивать содержимое папки";
+"Partially selected" = "Выбрана часть файлов";
