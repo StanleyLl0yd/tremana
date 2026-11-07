@@ -38,13 +38,13 @@ private enum WindowSizing {
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     }
 
-    static func contentHeight(_ height: CGFloat, window: NSWindow) -> CGFloat {
+    static func contentHeight(_ height: CGFloat, window: NSWindow, minimum: Double) -> CGFloat {
         let chrome = window.frame.height
             - window.contentRect(forFrameRect: window.frame).height
         return CGFloat(AdaptiveWindowHeight.fitted(
             contentHeight: Double(height),
             visibleHeight: Double(visibleFrame(for: window).height),
-            minimum: 340,
+            minimum: minimum,
             chromeHeight: Double(max(30, chrome)),
             screenMargin: 26
         ))
@@ -144,8 +144,8 @@ final class WindowSizeObserver: NSView {
         if !desiredConnected {
             let screen = WindowSizing.visibleFrame(for: window)
             let target = NSSize(
-                width: max(340, min(760, screen.width - 26)),
-                height: WindowSizing.contentHeight(contentHeight, window: window)
+                width: max(320, min(660, screen.width - 26)),
+                height: WindowSizing.contentHeight(contentHeight, window: window, minimum: 260)
             )
             WindowSizing.setContentSize(target, for: window)
         }
@@ -186,8 +186,8 @@ final class SettingsSizeObserver: NSView {
         let visible = WindowSizing.visibleFrame(for: window)
         WindowSizing.setContentSize(
             NSSize(
-                width: max(340, min(570, visible.width - 26)),
-                height: WindowSizing.contentHeight(contentHeight, window: window)
+                width: max(320, min(530, visible.width - 26)),
+                height: WindowSizing.contentHeight(contentHeight, window: window, minimum: 300)
             ),
             for: window
         )

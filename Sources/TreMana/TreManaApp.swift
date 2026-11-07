@@ -23,7 +23,7 @@ struct TreManaApp: App {
             ContentView(model: model)
                 .environment(\.locale, interfaceLocale)
                 .preferredColorScheme(preferredAppearance)
-                .frame(minWidth: 700, minHeight: 330)
+                .frame(minWidth: 520, minHeight: 260)
         }
         .defaultSize(width: 1140, height: 740)
 
