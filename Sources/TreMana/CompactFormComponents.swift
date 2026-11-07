@@ -47,23 +47,3 @@ struct CompactFormRow<Content: View>: View {
     }
 }
 
-struct MeasuredContentHeight: PreferenceKey {
-    static var defaultValue: CGFloat { 0 }
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-extension View {
-    func reportNaturalHeight() -> some View {
-        background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: MeasuredContentHeight.self,
-                    value: proxy.size.height
-                )
-            }
-        }
-    }
-}
