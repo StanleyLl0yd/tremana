@@ -133,8 +133,8 @@ final class TableColumnWidthProbeView: NSView {
         // first layout pass. Retry when the containing window gains subviews.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(viewDidAddSubview(_:)),
-            name: NSView.didAddSubviewNotification,
+            selector: #selector(windowDidUpdate(_:)),
+            name: NSWindow.didUpdateNotification,
             object: nil
         )
         NotificationCenter.default.addObserver(
@@ -179,10 +179,11 @@ final class TableColumnWidthProbeView: NSView {
         }
     }
 
-    @objc private func viewDidAddSubview(_ notification: Notification) {
-        guard let window,
-              let parent = notification.object as? NSView,
-              parent.window === window else { return }
+    @objc private func windowDidUpdate(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === self.window else { return }
+        guard tableView == nil || tableView?.window !== window ||
+                tableView?.tableColumns.isEmpty == true else { return }
         scheduleAttach()
     }
 

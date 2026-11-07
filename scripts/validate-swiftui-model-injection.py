@@ -78,7 +78,7 @@ assert ".allowsHitTesting(!model.isBusy)" in inspector, (
 widths = (ui / "TableColumnWidthPersistence.swift").read_text(encoding="utf-8")
 assert "NSTableView.columnDidResizeNotification" in widths
 assert "NSEvent.addLocalMonitorForEvents" in widths
-assert "NSView.didAddSubviewNotification" in widths
+assert "NSWindow.didUpdateNotification" in widths
 assert "windowDidResignKey" in widths
 assert "applicationWillTerminate" in widths
 assert "column.title" in widths and "headerCell.stringValue" in widths
