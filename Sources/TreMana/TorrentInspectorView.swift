@@ -810,7 +810,8 @@ private struct FileTreePriorityCell: View {
         case .normal: 0
         case .high: 1
         case .mixed: 2
-        case .unknown: 3
+        case .skipped: 3
+        case .unknown: 4
         }
     }
 
@@ -819,6 +820,10 @@ private struct FileTreePriorityCell: View {
             if node.prioritySummary == .unknown {
                 Text("—")
                     .foregroundStyle(.tertiary)
+            } else if node.prioritySummary == .skipped {
+                Text("Skipped")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("folder.priority.skipped.\(node.id)")
             } else {
                 Picker("Priority", selection: Binding(
                     get: { selection },
@@ -920,9 +925,21 @@ private struct FilePriorityCell: View {
         return stats[row.id].priority
     }
 
+    private var wanted: Bool {
+        guard let detail = model.selectedTorrentDetail, detail.id == torrentID,
+              let stats = detail.fileStats, stats.indices.contains(row.id) else {
+            return row.stat?.wanted ?? false
+        }
+        return stats[row.id].wanted
+    }
+
     var body: some View {
         Group {
-            if row.stat != nil {
+            if row.stat != nil && !wanted {
+                Text("Skipped")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("file.priority.skipped.\(row.id)")
+            } else if row.stat != nil {
                 Picker("Priority", selection: Binding(
                     get: { priority },
                     set: { value in

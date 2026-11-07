@@ -22,6 +22,16 @@ for path in source_files:
 
 assert not disallowed, "UI must explicitly receive TreManaModel: " + ", ".join(disallowed)
 
+model = (root / "Sources" / "TreManaCore" / "TreManaModel.swift").read_text(encoding="utf-8")
+model_class = model.index("public final class TreManaModel")
+for method in ["setFileWanted", "setFilePriority", "applyFileBatch"]:
+    start = model.index("public func " + method + "(", model_class)
+    end = model.find("\n    public func ", start + 1)
+    assert end >= 0, "Unable to locate end of " + method
+    assert "selectedTorrentDetail = nil" not in model[start:end], (
+        method + " must keep the existing inspector snapshot mounted during RPC verification"
+    )
+
 app = (ui / "TreManaApp.swift").read_text(encoding="utf-8")
 assert "ContentView(model: model)" in app, "Root must explicitly inject the live model"
 assert ".environment(model)" not in app, "Do not depend on model environment lookup"
@@ -55,3 +65,4 @@ assert '"folder.wanted.\\(node.id)"' in inspector
 assert '"file.wanted.\\(row.id)"' in inspector
 
 print("SwiftUI model dependencies explicit: PASS")
+print("File mutations preserve the inspector snapshot: PASS")
