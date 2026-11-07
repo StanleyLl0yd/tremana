@@ -26,7 +26,7 @@ model = (root / "Sources" / "TreManaCore" / "TreManaModel.swift").read_text(enco
 model_class = model.index("public final class TreManaModel")
 for method in ["setFileWanted", "setFilePriority", "applyFileBatch"]:
     start = model.index("public func " + method + "(", model_class)
-    end = model.find("\\n    public func ", start + 1)
+    end = model.find("\n    public func ", start + 1)
     assert end >= 0, "Unable to locate end of " + method
     assert "selectedTorrentDetail = nil" not in model[start:end], (
         method + " must keep the existing inspector snapshot mounted during RPC verification"
