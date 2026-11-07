@@ -27,8 +27,7 @@ struct TreManaSettingsWindowSizing: NSViewRepresentable {
     }
 
     func updateNSView(_ view: SettingsSizeObserver, context: Context) {
-        view.contentHeight = contentHeight
-        view.resizeToFit()
+        view.configure(contentHeight: contentHeight)
     }
 }
 
@@ -79,15 +78,31 @@ final class WindowSizeObserver: NSView {
     private var contentHeight: CGFloat = 470
     private var appliedConnected: Bool?
 
+    private var updateScheduled = false
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        applyIfNeeded()
+        scheduleUpdate()
     }
 
     func configure(connected: Bool, contentHeight: CGFloat) {
+        guard desiredConnected != connected ||
+                abs(self.contentHeight - contentHeight) > 1 else { return }
         desiredConnected = connected
         self.contentHeight = contentHeight
-        applyIfNeeded()
+        scheduleUpdate()
+    }
+
+    // Never change NSWindow's frame during a SwiftUI representable update:
+    // defer and coalesce content-size changes to avoid reentrant layout.
+    private func scheduleUpdate() {
+        guard !updateScheduled else { return }
+        updateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updateScheduled = false
+            self.applyIfNeeded()
+        }
     }
 
     private func applyIfNeeded() {
@@ -138,14 +153,31 @@ final class WindowSizeObserver: NSView {
 }
 
 final class SettingsSizeObserver: NSView {
-    var contentHeight: CGFloat = 520
+    private var contentHeight: CGFloat = 520
+    private var updateScheduled = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        resizeToFit()
+        scheduleUpdate()
     }
 
-    func resizeToFit() {
+    func configure(contentHeight: CGFloat) {
+        guard abs(self.contentHeight - contentHeight) > 1 else { return }
+        self.contentHeight = contentHeight
+        scheduleUpdate()
+    }
+
+    private func scheduleUpdate() {
+        guard !updateScheduled else { return }
+        updateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updateScheduled = false
+            self.resizeToFit()
+        }
+    }
+
+    private func resizeToFit() {
         guard let window else { return }
         window.minSize = NSSize(width: 1, height: 1)
         window.styleMask.remove(.resizable)
