@@ -121,6 +121,16 @@ struct TorrentFileTreeTests {
         #expect(root.fileIndices == [0, 1])
     }
 
+    @Test func singleFileTorrentNameIsNotMistakenForARootPathPrefix() {
+        let root = TorrentFileTreeBuilder.build(
+            rootName: "Ubuntu.iso",
+            entries: [entry(0, "Ubuntu.iso", 100, 50)]
+        )
+        #expect(root.children?.count == 1)
+        #expect(root.children?.first?.name == "Ubuntu.iso")
+        #expect(root.children?.first?.fileIndex == 0)
+    }
+
     @Test func emptyAndUnsafePathComponentsDoNotCreatePhantomDirectories() {
         let root = TorrentFileTreeBuilder.build(
             rootName: "Paths",
