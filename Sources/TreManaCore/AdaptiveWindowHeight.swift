@@ -11,6 +11,15 @@ public enum AdaptiveWindowHeight {
             (!previous.isFinite || abs(measured - previous) > tolerance)
     }
 
+    /// Only enable scrolling when the full measured content cannot fit in the
+    /// screen-clamped window. No arbitrary compacting or font-size adjustments.
+    public static func needsScrolling(
+        contentHeight: Double, fittedHeight: Double, tolerance: Double = 1
+    ) -> Bool {
+        contentHeight.isFinite && fittedHeight.isFinite &&
+            contentHeight > fittedHeight + tolerance
+    }
+
     /// contentHeight is the measured SwiftUI content, including its own padding.
     /// visibleHeight includes the title bar; chromeHeight and margin remain free.
     public static func fitted(

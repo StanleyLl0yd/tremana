@@ -9,10 +9,31 @@ struct RefreshSettingsView: View {
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
     @State private var contentHeight: CGFloat = 360
+    @State private var requiresScroll = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 13) {
+        Group {
+            if requiresScroll {
+                ScrollView { settingsForm }
+                    .scrollIndicators(.automatic)
+            } else {
+                settingsForm
+            }
+        }
+        .frame(width: 530)
+        .background { TreManaWindowTint(intensity: 0.72) }
+        .overlay(alignment: .topLeading) {
+            TreManaSettingsWindowSizing(contentHeight: contentHeight) {
+                requiresScroll = $0
+            }
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private var settingsForm: some View {
+        VStack(alignment: .leading, spacing: 13) {
                 CompactFormSection("Language") {
                     CompactFormRow("Interface language") {
                         Picker("Interface language", selection: $preferredLanguage) {
@@ -98,15 +119,5 @@ struct RefreshSettingsView: View {
                     contentHeight = height
                 }
             }
-        }
-        .frame(width: 530)
-        .scrollIndicators(.automatic)
-        .background { TreManaWindowTint(intensity: 0.72) }
-        .overlay(alignment: .topLeading) {
-            TreManaSettingsWindowSizing(contentHeight: contentHeight)
-                .frame(width: 1, height: 1)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
     }
 }
