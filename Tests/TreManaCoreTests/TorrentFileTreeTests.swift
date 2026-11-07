@@ -18,7 +18,7 @@ struct TorrentFileTreeTests {
         )
     }
 
-    @Test func buildsNestedFoldersAndPreservesTransmissionFileIndices() {
+    @Test func buildsNestedFoldersAndPreservesTransmissionFileIndices() throws {
         let root = TorrentFileTreeBuilder.build(
             rootName: "Original Microsoft Office 2019 x86_x64 RU",
             rootID: "torrent:42",

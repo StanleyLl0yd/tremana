@@ -446,7 +446,7 @@ struct TorrentInspectorView: View {
         if node.isDirectory {
             return node.depth == 0 ? "externaldrive.fill" : "folder.fill"
         }
-        switch URL(fileURLWithPath: node.name).pathExtension.lowercased() {
+        return switch URL(fileURLWithPath: node.name).pathExtension.lowercased() {
         case "app", "pkg": "app"
         case "zip", "7z", "rar", "tar", "gz", "dmg", "iso": "archivebox"
         case "pdf": "doc.richtext"
