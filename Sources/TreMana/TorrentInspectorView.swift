@@ -299,10 +299,9 @@ struct TorrentInspectorView: View {
                     TableColumn("Download file") { row in
                         if let fileIndex = row.node.fileIndex,
                            let fileRow = fileRowsByIndex[fileIndex] {
-                            FileWantedCell(
-                                model: model, torrentID: detail.id, row: fileRow,
-                                wantedCount: wantedCount, queueLocked: queueLocked
-                            )
+                            FileWantedCell(model: model,
+                                           torrentID: detail.id, row: fileRow,
+                                           wantedCount: wantedCount, queueLocked: queueLocked)
                         } else {
                             FileTreeWantedCell(
                                 model: model, torrentID: detail.id, node: row.node,
@@ -315,9 +314,8 @@ struct TorrentInspectorView: View {
                     TableColumn("Priority") { row in
                         if let fileIndex = row.node.fileIndex,
                            let fileRow = fileRowsByIndex[fileIndex] {
-                            FilePriorityCell(
-                                model: model, torrentID: detail.id, row: fileRow
-                            )
+                            FilePriorityCell(model: model,
+                                             torrentID: detail.id, row: fileRow)
                         } else {
                             FileTreePriorityCell(
                                 model: model, torrentID: detail.id, node: row.node
