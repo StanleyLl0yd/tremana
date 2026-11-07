@@ -12,7 +12,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
 }
 
 struct TorrentInspectorView: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     @Binding var selectedTab: InspectorTab
     @State private var selectedFileIndices: Set<Int> = []
     @State private var peerSortOrder: [KeyPathComparator<InspectorPeerRow>] = [
@@ -254,13 +254,13 @@ struct TorrentInspectorView: View {
                     .width(min: 100, ideal: 155)
 
                     TableColumn("Download file") { row in
-                        FileWantedCell(torrentID: detail.id, row: row,
+                        FileWantedCell(model: model, torrentID: detail.id, row: row,
                                        wantedCount: wantedCount, queueLocked: queueLocked)
                     }
                     .width(min: 72, ideal: 90)
 
                     TableColumn("Priority") { row in
-                        FilePriorityCell(torrentID: detail.id, row: row)
+                        FilePriorityCell(model: model, torrentID: detail.id, row: row)
                     }
                     .width(min: 100, ideal: 130)
                 }
@@ -268,6 +268,7 @@ struct TorrentInspectorView: View {
                     let chosen = clicked.filter { entries.indices.contains($0) }.sorted()
                     if !chosen.isEmpty && hasStats {
                         FileBatchActions(
+                            model: model,
                             torrentID: detail.id,
                             indices: chosen,
                             wantedCount: wantedCount,
@@ -492,7 +493,7 @@ private struct FileTableEntry: Identifiable {
 }
 
 private struct FileWantedCell: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     let torrentID: Int
     let row: FileTableEntry
     let wantedCount: Int
@@ -537,7 +538,7 @@ private struct FileWantedCell: View {
 }
 
 private struct FilePriorityCell: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     let torrentID: Int
     let row: FileTableEntry
 
@@ -581,7 +582,7 @@ private struct FilePriorityCell: View {
 }
 
 private struct FileBatchActions: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     let torrentID: Int
     let indices: [Int]
     let wantedCount: Int
