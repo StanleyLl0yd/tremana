@@ -176,7 +176,7 @@ final class TableColumnWidthProbeView: NSView {
 
     private func isTarget(_ table: NSTableView) -> Bool {
         let expectedViewID = "\(tableIdentifier).table"
-        if table.identifier.rawValue == expectedViewID ||
+        if table.identifier?.rawValue == expectedViewID ||
             table.accessibilityIdentifier() == expectedViewID {
             return true
         }
@@ -231,7 +231,6 @@ final class TableColumnWidthProbeView: NSView {
                 column.width = restored
             }
         }
-        table.needsLayout = true
     }
 
     @objc private func columnDidResize(_ notification: Notification) {
