@@ -3,6 +3,7 @@ import SwiftUI
 
 /// Persists user-resized widths for a native SwiftUI Table without taking over
 /// its existing column visibility, ordering, or selection behaviour.
+@MainActor
 struct TableColumnWidthPersistence: NSViewRepresentable {
     let tableIdentifier: String
     let columnIdentifiers: Set<String>
@@ -56,7 +57,7 @@ struct TableColumnWidthPersistence: NSViewRepresentable {
 }
 
 @MainActor
-private final class TableColumnWidthProbeView: NSView {
+final class TableColumnWidthProbeView: NSView {
     private var tableIdentifier: String
     private var columnIdentifiers: Set<String>
     private var titleIdentifiers: [String: String]
@@ -66,7 +67,7 @@ private final class TableColumnWidthProbeView: NSView {
     private var isRestoring = false
 
     private var storageKey: String {
-        "com.sl.tremana.table-column-widths.v1.\\(tableIdentifier)"
+        "com.sl.tremana.table-column-widths.v1.\(tableIdentifier)"
     }
 
     init(
