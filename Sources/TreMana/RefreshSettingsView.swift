@@ -109,19 +109,22 @@ struct RefreshSettingsView: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
             .fixedSize(horizontal: false, vertical: true)
-            .reportNaturalHeight()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                if AdaptiveWindowHeight.shouldUpdate(
+                    previous: Double(contentHeight), measured: Double(height)
+                ) {
+                    contentHeight = height
+                }
+            }
         }
         .frame(width: 570)
         .scrollIndicators(.automatic)
         .background { TreManaWindowTint(intensity: 0.72) }
-        .background {
+        .overlay(alignment: .topLeading) {
             TreManaSettingsWindowSizing(contentHeight: contentHeight)
-                .frame(width: 0, height: 0)
-        }
-        .onPreferenceChange(MeasuredContentHeight.self) { height in
-            if height > 0 && abs(height - contentHeight) > 1 {
-                contentHeight = height
-            }
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 }
