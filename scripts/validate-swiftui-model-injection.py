@@ -77,7 +77,14 @@ assert ".allowsHitTesting(!model.isBusy)" in inspector, (
 )
 widths = (ui / "TableColumnWidthPersistence.swift").read_text(encoding="utf-8")
 assert "NSTableView.columnDidResizeNotification" in widths
+assert "NSEvent.addLocalMonitorForEvents" in widths
+assert "NSView.didAddSubviewNotification" in widths
+assert "windowDidResignKey" in widths
+assert "applicationWillTerminate" in widths
+assert "column.title" in widths and "headerCell.stringValue" in widths
 assert "UserDefaults.standard.set" in widths
+assert "return event" in widths, "Column header events must reach native AppKit fit-to-content handling"
+assert "fit-to-cell-content" in widths
 assert "TableColumnWidthPersistence(" in content
 assert "TableColumnWidthPersistence(" in inspector
 assert '.customizationID("files.name")' in inspector
@@ -98,4 +105,5 @@ for cell, next_cell in [
 print("SwiftUI model dependencies explicit: PASS")
 print("File mutations preserve the inspector snapshot: PASS")
 print("File/folder cell updates are isolated: PASS")
-print("Torrent and inspector column widths persist: PASS")
+print("Column-width probes retry attachment and save after mouse-up: PASS")
+print("Native AppKit double-click fit-to-content remains enabled: PASS")

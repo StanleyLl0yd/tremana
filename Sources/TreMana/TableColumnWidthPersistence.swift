@@ -65,6 +65,7 @@ final class TableColumnWidthProbeView: NSView {
     private var restoredColumnInstances: [String: ObjectIdentifier] = [:]
     private var attachScheduled = false
     private var isRestoring = false
+    private var localEventMonitor: Any?
 
     private var storageKey: String {
         "com.sl.tremana.table-column-widths.v1.\(tableIdentifier)"
@@ -80,6 +81,7 @@ final class TableColumnWidthProbeView: NSView {
         self.titleIdentifiers = titleIdentifiers
         super.init(frame: .zero)
         isHidden = true
+        installObservers()
     }
 
     required init?(coder: NSCoder) {
@@ -88,6 +90,9 @@ final class TableColumnWidthProbeView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if tableView?.window !== window {
+            detachTable()
+        }
         scheduleAttach()
     }
 
@@ -103,6 +108,9 @@ final class TableColumnWidthProbeView: NSView {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+        }
     }
 
     func configure(
@@ -113,11 +121,86 @@ final class TableColumnWidthProbeView: NSView {
         guard self.tableIdentifier != tableIdentifier ||
                 self.columnIdentifiers != columnIdentifiers ||
                 self.titleIdentifiers != titleIdentifiers else { return }
-        detach()
+        detachTable()
         self.tableIdentifier = tableIdentifier
         self.columnIdentifiers = columnIdentifiers
         self.titleIdentifiers = titleIdentifiers
         scheduleAttach()
+    }
+
+    private func installObservers() {
+        // SwiftUI can insert its native NSTableView after the representable's
+        // first layout pass. Retry when the containing window gains subviews.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(viewDidAddSubview(_:)),
+            name: NSView.didAddSubviewNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidResignKey(_:)),
+            name: NSWindow.didResignKeyNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationWillTerminate(_:)),
+            name: NSApplication.willTerminateNotification,
+            object: nil
+        )
+
+        // The resize notification is the primary save path. The local monitor
+        // below is a second path for SwiftUI-hosted tables and saves after the
+        // mouse-up event has fully completed.
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseUp]
+        ) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            if event.type == .leftMouseDown {
+                self.attachIfNeeded()
+            } else if event.type == .leftMouseUp {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.attachIfNeeded()
+                    self.saveWidths()
+                }
+            }
+
+            // Do not consume header events. Native NSTableView double-click
+            // on a column divider performs its built-in fit-to-cell-content.
+            return event
+        }
+    }
+
+    @objc private func viewDidAddSubview(_ notification: Notification) {
+        guard let window,
+              let parent = notification.object as? NSView,
+              parent.window === window else { return }
+        scheduleAttach()
+    }
+
+    @objc private func windowDidResignKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === tableView?.window else { return }
+        saveWidths()
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === tableView?.window else { return }
+        saveWidths()
+        detachTable()
+    }
+
+    @objc private func applicationWillTerminate(_ notification: Notification) {
+        saveWidths()
     }
 
     private func scheduleAttach() {
@@ -132,14 +215,15 @@ final class TableColumnWidthProbeView: NSView {
 
     private func attachIfNeeded() {
         guard let window, let contentView = window.contentView else {
-            detach()
+            detachTable()
             return
         }
         guard let candidate = findTable(in: contentView) else { return }
 
         if tableView !== candidate {
-            detach()
+            detachTable()
             tableView = candidate
+            candidate.allowsColumnResizing = true
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(columnDidResize(_:)),
@@ -150,7 +234,7 @@ final class TableColumnWidthProbeView: NSView {
         restoreSavedWidths(in: candidate)
     }
 
-    private func detach() {
+    private func detachTable() {
         if let tableView {
             NotificationCenter.default.removeObserver(
                 self,
@@ -176,29 +260,26 @@ final class TableColumnWidthProbeView: NSView {
 
     private func isTarget(_ table: NSTableView) -> Bool {
         let expectedViewID = "\(tableIdentifier).table"
-        if table.identifier?.rawValue == expectedViewID ||
-            table.accessibilityIdentifier() == expectedViewID {
-            return true
+        var ancestor: NSView? = table
+        while let view = ancestor {
+            if view.identifier?.rawValue == expectedViewID ||
+                view.accessibilityIdentifier() == expectedViewID {
+                return true
+            }
+            ancestor = view.superview
         }
 
-        let rawIdentifiers = Set(table.tableColumns.map { $0.identifier.rawValue })
-        if rawIdentifiers.intersection(columnIdentifiers).count >= min(2, columnIdentifiers.count) {
-            return true
-        }
-
-        // SwiftUI may keep its internal NSTableColumn identifiers opaque.
-        // Fall back to table-specific header signatures, never generic Name/Progress.
-        let titles = Set(table.tableColumns.map { $0.headerCell.stringValue })
+        let recognized = Set(table.tableColumns.compactMap(columnIdentifier))
+            .intersection(columnIdentifiers)
         switch tableIdentifier {
         case "torrents":
-            return titles.contains("Status") || titles.contains("Состояние") ||
-                titles.contains("Upload") || titles.contains("Отдача")
+            return !recognized.isDisjoint(with: [
+                "status", "upload", "ratio", "eta", "totalSize"
+            ])
         case "files":
-            let hasSize = titles.contains("Size") || titles.contains("Размер")
-            let hasDownload = titles.contains("Download file") ||
-                titles.contains("Download") || titles.contains("Скачивать")
-            let hasPriority = titles.contains("Priority") || titles.contains("Приоритет")
-            return hasSize && hasDownload && hasPriority
+            return !recognized.isDisjoint(with: [
+                "files.size", "files.download", "files.priority"
+            ])
         default:
             return false
         }
@@ -207,7 +288,26 @@ final class TableColumnWidthProbeView: NSView {
     private func columnIdentifier(_ column: NSTableColumn) -> String? {
         let raw = column.identifier.rawValue
         if columnIdentifiers.contains(raw) { return raw }
-        return titleIdentifiers[column.headerCell.stringValue]
+
+        // SwiftUI may expose an opaque AppKit identifier. Try both NSTableColumn
+        // title and header-cell title; the latter can differ across OS releases.
+        let candidates = [column.title, column.headerCell.stringValue]
+        for candidate in candidates {
+            let title = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+            if let identifier = titleIdentifiers[title] {
+                return identifier
+            }
+            if let match = titleIdentifiers.first(where: {
+                $0.key.compare(
+                    title,
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                ) == .orderedSame
+            }) {
+                return match.value
+            }
+        }
+        return nil
     }
 
     private func restoreSavedWidths(in table: NSTableView) {
@@ -219,17 +319,19 @@ final class TableColumnWidthProbeView: NSView {
             guard let identifier = columnIdentifier(column) else { continue }
             let instance = ObjectIdentifier(column)
             guard restoredColumnInstances[identifier] != instance else { continue }
-            restoredColumnInstances[identifier] = instance
 
-            guard let stored = saved[identifier] else { continue }
-            let width = stored.doubleValue
-            guard width.isFinite, width > 0 else { continue }
-            let minimum = max(1, column.minWidth)
-            let maximum = max(minimum, column.maxWidth)
-            let restored = min(max(CGFloat(width), minimum), maximum)
-            if abs(column.width - restored) > 0.5 {
-                column.width = restored
+            if let stored = saved[identifier] {
+                let width = stored.doubleValue
+                if width.isFinite, width > 0 {
+                    let minimum = max(1, column.minWidth)
+                    let maximum = max(minimum, column.maxWidth)
+                    let restored = min(max(CGFloat(width), minimum), maximum)
+                    if abs(column.width - restored) > 0.5 {
+                        column.width = restored
+                    }
+                }
             }
+            restoredColumnInstances[identifier] = instance
         }
     }
 
@@ -238,13 +340,23 @@ final class TableColumnWidthProbeView: NSView {
     }
 
     private func saveWidths() {
-        guard !isRestoring, let tableView else { return }
-        var saved = UserDefaults.standard.dictionary(forKey: storageKey) as? [String: Double] ?? [:]
+        guard !isRestoring, let tableView, tableView.window === window else { return }
+
+        var saved = UserDefaults.standard.dictionary(forKey: storageKey) as? [String: NSNumber] ?? [:]
+        var changed = false
         for column in tableView.tableColumns {
             guard let identifier = columnIdentifier(column),
                   column.width.isFinite, column.width > 0 else { continue }
-            saved[identifier] = Double(column.width)
+            let width = Double(column.width)
+            if let previous = saved[identifier],
+               abs(previous.doubleValue - width) < 0.5 {
+                continue
+            }
+            saved[identifier] = NSNumber(value: width)
+            changed = true
         }
-        UserDefaults.standard.set(saved, forKey: storageKey)
+        if changed {
+            UserDefaults.standard.set(saved, forKey: storageKey)
+        }
     }
 }
