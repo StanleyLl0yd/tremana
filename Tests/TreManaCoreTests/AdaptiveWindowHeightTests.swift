@@ -70,6 +70,23 @@ struct AdaptiveWindowHeightTests {
         #expect(smallScreen == 366)
     }
 
+    @Test func scrollingOnlyWhenContentExceedsPhysicalWindow() {
+        let normal = AdaptiveWindowHeight.fitted(
+            contentHeight: 475, visibleHeight: 900,
+            minimum: 300, chromeHeight: 38, screenMargin: 26
+        )
+        #expect(normal == 475)
+        #expect(!AdaptiveWindowHeight.needsScrolling(contentHeight: 475, fittedHeight: normal))
+
+        let expanded = AdaptiveWindowHeight.fitted(
+            contentHeight: 1040, visibleHeight: 900,
+            minimum: 260, chromeHeight: 38, screenMargin: 26
+        )
+        #expect(expanded == 836)
+        #expect(AdaptiveWindowHeight.needsScrolling(contentHeight: 1040, fittedHeight: expanded))
+        #expect(!AdaptiveWindowHeight.needsScrolling(contentHeight: .nan, fittedHeight: expanded))
+    }
+
     @Test func malformedMetricsFallBackSafely() {
         for content in [Double.nan, -.infinity, .infinity, -5.0] {
             let value = AdaptiveWindowHeight.fitted(contentHeight: content, visibleHeight: 700)

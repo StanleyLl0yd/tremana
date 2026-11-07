@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var showingAddTorrent = false
     @State private var searchText = ""
     @State private var connectionContentHeight: CGFloat = 300
+    @State private var connectionRequiresScroll = false
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
 
     private var refreshConfiguration: RefreshConfiguration {
@@ -109,7 +110,11 @@ struct ContentView: View {
         }
             } else {
                 NavigationStack {
-                    ConnectionView(model: model, measuredHeight: $connectionContentHeight)
+                    ConnectionView(
+                        model: model,
+                        measuredHeight: $connectionContentHeight,
+                        requiresScroll: $connectionRequiresScroll
+                    )
                 }
             }
         }
@@ -117,7 +122,8 @@ struct ContentView: View {
         .overlay(alignment: .topLeading) {
             TreManaWindowSizing(
                 isConnected: model.isConnected,
-                disconnectedContentHeight: connectionContentHeight
+                disconnectedContentHeight: connectionContentHeight,
+                onScrollRequirementChange: { connectionRequiresScroll = $0 }
             )
             .frame(width: 1, height: 1)
             .allowsHitTesting(false)
@@ -340,6 +346,7 @@ private struct ToolbarActionButton: View {
 private struct ConnectionView: View {
     let model: TreManaModel
     @Binding var measuredHeight: CGFloat
+    @Binding var requiresScroll: Bool
     @State private var editingConnection = false
 
     /// A stored connection needs only its selector and Connect button. Avoid
@@ -349,10 +356,24 @@ private struct ConnectionView: View {
     }
 
     var body: some View {
-        @Bindable var form = model
+        Group {
+            if requiresScroll {
+                ScrollView { connectionForm }
+                    .scrollIndicators(.automatic)
+            } else {
+                connectionForm
+            }
+        }
+        .background { TreManaWindowTint() }
+        .navigationTitle("Connection")
+        .task { await model.reloadProfiles() }
+    }
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 11) {
+    /// Measure the entire form before deciding whether scrolling is necessary.
+    /// An always-present ScrollView measures the viewport instead on some macOS layouts.
+    private var connectionForm: some View {
+        @Bindable var form = model
+        return VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 12) {
                     ConnectionHero()
                     Spacer(minLength: 8)
@@ -532,11 +553,6 @@ private struct ConnectionView: View {
                     measuredHeight = height
                 }
             }
-        }
-        .scrollIndicators(.automatic)
-        .background { TreManaWindowTint() }
-        .navigationTitle("Connection")
-        .task { await model.reloadProfiles() }
     }
 }
 

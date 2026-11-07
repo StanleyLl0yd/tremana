@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import OSLog
 import TreManaCore
 
 /// The connection window cannot be resized manually, but automatically grows
@@ -7,13 +8,18 @@ import TreManaCore
 struct TreManaWindowSizing: NSViewRepresentable {
     let isConnected: Bool
     let disconnectedContentHeight: CGFloat
+    let onScrollRequirementChange: (Bool) -> Void
 
     func makeNSView(context: Context) -> WindowSizeObserver {
         WindowSizeObserver()
     }
 
     func updateNSView(_ view: WindowSizeObserver, context: Context) {
-        view.configure(connected: isConnected, contentHeight: disconnectedContentHeight)
+        view.configure(
+            connected: isConnected,
+            contentHeight: disconnectedContentHeight,
+            onScrollRequirementChange: onScrollRequirementChange
+        )
     }
 }
 
@@ -21,33 +27,52 @@ struct TreManaWindowSizing: NSViewRepresentable {
 /// window that cuts off its own bottom controls.
 struct TreManaSettingsWindowSizing: NSViewRepresentable {
     let contentHeight: CGFloat
+    let onScrollRequirementChange: (Bool) -> Void
 
     func makeNSView(context: Context) -> SettingsSizeObserver {
         SettingsSizeObserver()
     }
 
     func updateNSView(_ view: SettingsSizeObserver, context: Context) {
-        view.configure(contentHeight: contentHeight)
+        view.configure(contentHeight: contentHeight, onScrollRequirementChange: onScrollRequirementChange)
     }
 }
 
+@MainActor
 private enum WindowSizing {
+    private static let logger = Logger(subsystem: "com.sl.tremana", category: "window-sizing")
     static func visibleFrame(for window: NSWindow) -> NSRect {
         window.screen?.visibleFrame
             ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     }
 
-    static func contentHeight(_ height: CGFloat, window: NSWindow, minimum: Double) -> CGFloat {
+    static func fit(_ measuredHeight: CGFloat, window: NSWindow, minimum: Double)
+        -> (height: CGFloat, needsScroll: Bool) {
         let chrome = window.frame.height
             - window.contentRect(forFrameRect: window.frame).height
-        return CGFloat(AdaptiveWindowHeight.fitted(
-            contentHeight: Double(height),
+        let fitted = AdaptiveWindowHeight.fitted(
+            contentHeight: Double(measuredHeight),
             visibleHeight: Double(visibleFrame(for: window).height),
             minimum: minimum,
             chromeHeight: Double(max(30, chrome)),
             screenMargin: 26
-        ))
+        )
+        return (
+            height: CGFloat(fitted),
+            needsScroll: AdaptiveWindowHeight.needsScrolling(
+                contentHeight: Double(measuredHeight), fittedHeight: fitted
+            )
+        )
+    }
+
+    /// Public-size-only diagnostics: no credentials, RPC URLs or profile names.
+    /// An actual Mac can reveal whether the content or screen limit causes scrolling.
+    static func logFit(_ name: String, measured: CGFloat, target: CGFloat,
+                       needsScroll: Bool, window: NSWindow) {
+        let visible = visibleFrame(for: window).height
+        let actual = window.contentRect(forFrameRect: window.frame).height
+        logger.info("\(name, privacy: .public): measured=\(Double(measured))pt, target=\(Double(target))pt, actual=\(Double(actual))pt, visibleFrame=\(Double(visible))pt, scrolling=\(String(needsScroll), privacy: .public)")
     }
 
     /// Keep the window's top edge steady as status/error text expands the form.
@@ -77,20 +102,43 @@ final class WindowSizeObserver: NSView {
     private var desiredConnected = false
     private var contentHeight: CGFloat = 470
     private var appliedConnected: Bool?
-
+    private var onScrollRequirementChange: ((Bool) -> Void)?
+    private var lastScrollRequirement: Bool?
+    private var observesScreenChanges = false
     private var updateScheduled = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if !observesScreenChanges {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(screenGeometryDidChange(_:)),
+                name: NSApplication.didChangeScreenParametersNotification, object: nil
+            )
+            observesScreenChanges = true
+        }
         scheduleUpdate()
     }
 
-    func configure(connected: Bool, contentHeight: CGFloat) {
+    @objc private func screenGeometryDidChange(_ notification: Notification) {
+        scheduleUpdate()
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    func configure(connected: Bool, contentHeight: CGFloat,
+                   onScrollRequirementChange: @escaping (Bool) -> Void) {
+        self.onScrollRequirementChange = onScrollRequirementChange
         guard desiredConnected != connected ||
                 abs(self.contentHeight - contentHeight) > 1 else { return }
         desiredConnected = connected
         self.contentHeight = contentHeight
         scheduleUpdate()
+    }
+
+    private func publishScrollRequirement(_ needsScroll: Bool) {
+        guard lastScrollRequirement != needsScroll else { return }
+        lastScrollRequirement = needsScroll
+        onScrollRequirementChange?(needsScroll)
     }
 
     // Never change NSWindow's frame during a SwiftUI representable update:
@@ -143,28 +191,58 @@ final class WindowSizeObserver: NSView {
 
         if !desiredConnected {
             let screen = WindowSizing.visibleFrame(for: window)
+            let fit = WindowSizing.fit(contentHeight, window: window, minimum: 260)
             let target = NSSize(
                 width: max(320, min(660, screen.width - 26)),
-                height: WindowSizing.contentHeight(contentHeight, window: window, minimum: 260)
+                height: fit.height
             )
             WindowSizing.setContentSize(target, for: window)
+            WindowSizing.logFit("Connection", measured: contentHeight,
+                                target: fit.height, needsScroll: fit.needsScroll, window: window)
+            publishScrollRequirement(fit.needsScroll)
+        } else {
+            publishScrollRequirement(false)
         }
     }
 }
 
 final class SettingsSizeObserver: NSView {
     private var contentHeight: CGFloat = 520
+    private var onScrollRequirementChange: ((Bool) -> Void)?
+    private var lastScrollRequirement: Bool?
+    private var observesScreenChanges = false
     private var updateScheduled = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if !observesScreenChanges {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(screenGeometryDidChange(_:)),
+                name: NSApplication.didChangeScreenParametersNotification, object: nil
+            )
+            observesScreenChanges = true
+        }
         scheduleUpdate()
     }
 
-    func configure(contentHeight: CGFloat) {
+    @objc private func screenGeometryDidChange(_ notification: Notification) {
+        scheduleUpdate()
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    func configure(contentHeight: CGFloat,
+                   onScrollRequirementChange: @escaping (Bool) -> Void) {
+        self.onScrollRequirementChange = onScrollRequirementChange
         guard abs(self.contentHeight - contentHeight) > 1 else { return }
         self.contentHeight = contentHeight
         scheduleUpdate()
+    }
+
+    private func publishScrollRequirement(_ needsScroll: Bool) {
+        guard lastScrollRequirement != needsScroll else { return }
+        lastScrollRequirement = needsScroll
+        onScrollRequirementChange?(needsScroll)
     }
 
     private func scheduleUpdate() {
@@ -184,12 +262,13 @@ final class SettingsSizeObserver: NSView {
         window.standardWindowButton(.zoomButton)?.isEnabled = false
 
         let visible = WindowSizing.visibleFrame(for: window)
+        let fit = WindowSizing.fit(contentHeight, window: window, minimum: 300)
         WindowSizing.setContentSize(
-            NSSize(
-                width: max(320, min(530, visible.width - 26)),
-                height: WindowSizing.contentHeight(contentHeight, window: window, minimum: 300)
-            ),
+            NSSize(width: max(320, min(530, visible.width - 26)), height: fit.height),
             for: window
         )
+        WindowSizing.logFit("Settings", measured: contentHeight,
+                            target: fit.height, needsScroll: fit.needsScroll, window: window)
+        publishScrollRequirement(fit.needsScroll)
     }
 }
