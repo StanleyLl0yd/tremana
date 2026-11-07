@@ -20,8 +20,7 @@ struct TreManaApp: App {
 
     var body: some Scene {
         Window("TreMana", id: "main") {
-            ContentView()
-                .environment(model)
+            ContentView(model: model)
                 .environment(\.locale, interfaceLocale)
                 .preferredColorScheme(preferredAppearance)
                 .frame(minWidth: 700, minHeight: 330)

@@ -9,7 +9,7 @@ struct RemoteTorrentActionRequest: Identifiable {
 }
 
 struct RemoteTorrentActionSheet: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     @Environment(\.dismiss) private var dismiss
 
     let request: RemoteTorrentActionRequest

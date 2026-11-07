@@ -11,7 +11,7 @@ private enum TorrentFilter: Hashable {
 }
 
 struct ContentView: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
     @AppStorage(RefreshPreferenceKeys.enabled) private var autoRefreshEnabled = true
@@ -96,6 +96,7 @@ struct ContentView: View {
         } detail: {
             VStack(spacing: 0) {
                 TorrentCommandBar(
+                    model: model,
                     showSidebar: columnVisibility == .detailOnly,
                     revealSidebar: { columnVisibility = .all },
                     add: { showingAddTorrent = true },
@@ -103,12 +104,12 @@ struct ContentView: View {
                     searchText: $searchText
                 )
                 Divider()
-                TorrentTableView(filter: filter ?? .all, searchText: searchText)
+                TorrentTableView(model: model, filter: filter ?? .all, searchText: searchText)
             }
         }
             } else {
                 NavigationStack {
-                    ConnectionView()
+                    ConnectionView(model: model)
                 }
             }
         }
@@ -177,7 +178,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAddTorrent) {
-            AddTorrentSheet()
+            AddTorrentSheet(model: model)
         }
         .onChange(of: filter) { _, _ in
             model.selectedTorrentIDs.removeAll()
@@ -218,7 +219,7 @@ enum ToolbarPresentation: String, CaseIterable, Identifiable {
 }
 
 private struct TorrentCommandBar: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
 
     let showSidebar: Bool
     let revealSidebar: () -> Void
@@ -340,7 +341,7 @@ private struct ToolbarActionButton: View {
 }
 
 private struct ConnectionView: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
 
     var body: some View {
         @Bindable var form = model
@@ -496,7 +497,7 @@ private struct ConnectionView: View {
 }
 
 private struct TorrentTableView: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     let filter: TorrentFilter
     let searchText: String
     @AppStorage("com.sl.tremana.inspector-tab.v1") private var inspectorTabName = InspectorTab.files.rawValue
@@ -731,7 +732,7 @@ private struct TorrentTableView: View {
                         )
                     }
 
-                TorrentInspectorView(selectedTab: selectedInspectorTab)
+                TorrentInspectorView(model: model, selectedTab: selectedInspectorTab)
                     .frame(height: sizing.inspectorHeight)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -831,7 +832,7 @@ private struct TorrentTableView: View {
             Text("Transmission 3.00 / RPC 16 cannot schedule pieces in order. No setting was changed.")
         }
         .sheet(item: $remoteActionRequest) { request in
-            RemoteTorrentActionSheet(request: request)
+            RemoteTorrentActionSheet(model: model, request: request)
         }
         .confirmationDialog(
             "Verify \(pendingVerifyIDs.count) torrent(s)?",
@@ -873,7 +874,7 @@ private enum TorrentSourceMode: Hashable {
 }
 
 private struct AddTorrentSheet: View {
-    @Environment(TreManaModel.self) private var model
+    let model: TreManaModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var mode: TorrentSourceMode = .magnet
