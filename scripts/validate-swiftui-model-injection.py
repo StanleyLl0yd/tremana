@@ -44,4 +44,14 @@ for call in [
 ]:
     assert call in inspector, "Missing explicit model for detached Table UI: " + call
 
+# File and folder selection must share one deterministic custom control. Using
+# Toggle(.checkbox) beside a separately drawn folder button causes size/color
+# divergence, especially when the app window is inactive.
+assert "private struct FileWantedControl: View" in inspector
+assert inspector.count("FileWantedControl(") == 2, "Files and folders must use the same wanted control"
+assert ".toggleStyle(.checkbox)" not in inspector, "Do not mix native and custom file-selection controls"
+assert "checkmark.square.fill" not in inspector, "Folder selection must use the shared control"
+assert '"folder.wanted.\\(node.id)"' in inspector
+assert '"file.wanted.\\(row.id)"' in inspector
+
 print("SwiftUI model dependencies explicit: PASS")

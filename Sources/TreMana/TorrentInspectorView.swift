@@ -664,6 +664,96 @@ private struct FileTreeTableRow: Identifiable {
     var id: String { node.id }
 }
 
+private enum FileWantedControlState: Equatable {
+    case selected
+    case unselected
+    case mixed
+    case unknown
+
+    init(_ summary: TorrentFileWantedSummary) {
+        switch summary {
+        case .wanted: self = .selected
+        case .unwanted: self = .unselected
+        case .mixed: self = .mixed
+        case .unknown: self = .unknown
+        }
+    }
+
+    var accessibilityValue: LocalizedStringKey {
+        switch self {
+        case .selected: "Selected"
+        case .unselected: "Not selected"
+        case .mixed: "Mixed"
+        case .unknown: "Unknown"
+        }
+    }
+}
+
+/// A single, deliberately drawn control for file and folder selection.
+/// Unlike the platform checkbox, its geometry and accent color do not change
+/// when the main window loses key-window focus.
+private struct FileWantedControl: View {
+    let state: FileWantedControlState
+    let title: LocalizedStringKey
+    let help: LocalizedStringKey
+    let identifier: String
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(fillColor)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: 1)
+
+                switch state {
+                case .selected:
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.white)
+                case .mixed:
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 8, height: 2)
+                case .unselected:
+                    EmptyView()
+                case .unknown:
+                    Image(systemName: "minus")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .frame(width: 17, height: 17)
+            .frame(width: 32, height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled || state == .unknown)
+        .help(help)
+        .accessibilityLabel(title)
+        .accessibilityValue(Text(state.accessibilityValue))
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var fillColor: Color {
+        switch state {
+        case .selected: Color.accentColor
+        case .mixed: Color.accentColor.opacity(0.14)
+        case .unselected, .unknown: Color.primary.opacity(0.035)
+        }
+    }
+
+    private var borderColor: Color {
+        switch state {
+        case .selected, .mixed: Color.accentColor
+        case .unselected: Color.secondary.opacity(0.55)
+        case .unknown: Color.secondary.opacity(0.35)
+        }
+    }
+}
+
 private struct FileTreeWantedCell: View {
     let model: TreManaModel
     let torrentID: Int
@@ -675,21 +765,27 @@ private struct FileTreeWantedCell: View {
         node.wantedSummary != .wanted
     }
 
-    private var symbol: String {
-        switch node.wantedSummary {
-        case .wanted: "checkmark.square.fill"
-        case .unwanted: "square"
-        case .mixed: "minus.square.fill"
-        case .unknown: "minus.square"
-        }
-    }
-
     private var actionTitle: String {
         shouldDownload ? "Download folder contents" : "Skip folder contents"
     }
 
+    private var canChangeSelection: Bool {
+        !model.isBusy && !queueLocked &&
+            node.wantedSummary != .unknown &&
+            !node.fileIndices.isEmpty &&
+            (shouldDownload || wantedCount > node.wantedFileCount)
+    }
+
     var body: some View {
-        Button {
+        FileWantedControl(
+            state: FileWantedControlState(node.wantedSummary),
+            title: LocalizedStringKey(actionTitle),
+            help: LocalizedStringKey(
+                node.wantedSummary == .mixed ? "Partially selected" : actionTitle
+            ),
+            identifier: "folder.wanted.\(node.id)",
+            isEnabled: canChangeSelection
+        ) {
             guard !node.fileIndices.isEmpty else { return }
             Task {
                 await model.applyFileBatch(
@@ -698,24 +794,8 @@ private struct FileTreeWantedCell: View {
                     action: .download(shouldDownload)
                 )
             }
-        } label: {
-            Image(systemName: symbol)
-                .foregroundStyle(node.wantedSummary == .unknown
-                    ? Color.secondary : Color.accentColor)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .disabled(
-            model.isBusy || queueLocked ||
-            node.wantedSummary == .unknown ||
-            node.fileIndices.isEmpty ||
-            (!shouldDownload && wantedCount <= node.wantedFileCount)
-        )
-        .help(LocalizedStringKey(
-            node.wantedSummary == .mixed ? "Partially selected" : actionTitle
-        ))
-        .accessibilityLabel(LocalizedStringKey(actionTitle))
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -799,25 +879,26 @@ private struct FileWantedCell: View {
     var body: some View {
         Group {
             if row.stat != nil {
-                Toggle("Download file", isOn: Binding(
-                    get: { wanted },
-                    set: { next in
-                        let previous = wanted
-                        Task {
-                            await model.setFileWanted(
-                                torrentID: torrentID, fileIndex: row.id,
-                                wanted: next, expectedWanted: previous
-                            )
-                        }
+                FileWantedControl(
+                    state: wanted ? .selected : .unselected,
+                    title: "Download file",
+                    help: queueLocked
+                        ? "Disable ordered downloading before changing file selection"
+                        : "Download file",
+                    identifier: "file.wanted.\(row.id)",
+                    isEnabled: !model.isBusy && !queueLocked &&
+                        (!wanted || wantedCount > 1)
+                ) {
+                    let previous = wanted
+                    Task {
+                        await model.setFileWanted(
+                            torrentID: torrentID,
+                            fileIndex: row.id,
+                            wanted: !previous,
+                            expectedWanted: previous
+                        )
                     }
-                ))
-                .toggleStyle(.checkbox)
-                .labelsHidden()
-                .disabled(model.isBusy || queueLocked || (wanted && wantedCount == 1))
-                .help(queueLocked
-                    ? "Disable ordered downloading before changing file selection"
-                    : "Download file")
-                .accessibilityIdentifier("file.wanted.\(row.id)")
+                }
             } else {
                 Text("—").foregroundStyle(.tertiary)
             }
