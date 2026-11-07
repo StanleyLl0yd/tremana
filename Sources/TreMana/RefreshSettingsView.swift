@@ -8,7 +8,7 @@ struct RefreshSettingsView: View {
     @AppStorage(RefreshPreferenceKeys.mode) private var refreshMode = RefreshMode.adaptive.rawValue
     @AppStorage(RefreshPreferenceKeys.fixedInterval) private var fixedInterval = 10
     @AppStorage(ToolbarPresentation.storageKey) private var toolbarPresentation = ToolbarPresentation.iconsAndLabels.rawValue
-    @State private var contentHeight: CGFloat = 540
+    @State private var contentHeight: CGFloat = 360
 
     var body: some View {
         ScrollView {
