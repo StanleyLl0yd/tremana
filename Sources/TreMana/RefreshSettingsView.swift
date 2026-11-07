@@ -66,6 +66,7 @@ struct RefreshSettingsView: View {
                         .pickerStyle(.menu)
                         .labelsHidden()
                         .disabled(!autoRefreshEnabled)
+                        .help("Adaptive refresh: 5 seconds during downloads, 15 when idle, 30 in the background.")
                     }
 
                     if refreshMode == RefreshMode.fixed.rawValue {
@@ -83,28 +84,9 @@ struct RefreshSettingsView: View {
                     }
                 }
 
-                CompactFormSection("Refresh behavior") {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Label("Adaptive · 5 seconds", systemImage: "arrow.down.circle")
-                        Text("During downloads and verification.")
-                            .foregroundStyle(.secondary)
 
-                        Divider()
-                        Label("Adaptive · 15 seconds", systemImage: "pause.circle")
-                        Text("When connected without active downloads.")
-                            .foregroundStyle(.secondary)
-
-                        Divider()
-                        Label("Background or network errors · 30 seconds", systemImage: "moon")
-                        Text("Fixed mode is also limited to 30 seconds while inactive. macOS may suspend background activity.")
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.caption)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(13)
-                }
             }
-            .frame(maxWidth: 530)
+            .frame(maxWidth: 490)
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
@@ -117,7 +99,7 @@ struct RefreshSettingsView: View {
                 }
             }
         }
-        .frame(width: 570)
+        .frame(width: 530)
         .scrollIndicators(.automatic)
         .background { TreManaWindowTint(intensity: 0.72) }
         .overlay(alignment: .topLeading) {
